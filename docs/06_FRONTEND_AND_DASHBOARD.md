@@ -6,103 +6,95 @@ The NIRIKSHA frontend is built with **React 19**, **Vite**, and **TypeScript**. 
 
 ## 1. Frontend Rendering & State Flow
 
-```d2
-direction: down
+```mermaid
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": "Inter, Segoe UI, -apple-system, BlinkMacSystemFont, Roboto, sans-serif",
+    "fontSize": "13px",
+    "primaryColor": "#ffffff",
+    "primaryBorderColor": "#64748b",
+    "primaryTextColor": "#0f172a",
+    "lineColor": "#475569",
+    "clusterBkg": "#f8fafc",
+    "clusterBorder": "#94a3b8"
+  },
+  "flowchart": { "curve": "basis", "htmlLabels": true, "nodeSpacing": 25, "rankSpacing": 40 }
+} }%%
+flowchart TB
+    WS_SRV["<b>WebSocket Server Endpoint</b><br/><code>/ws/telemetry</code> (20-50 Hz)"]
 
-ws_stream: WebSocket Server (/ws/telemetry) {
-  shape: cylinder
-  style.fill: "#eff6ff"
-}
+    subgraph HOOKS["React Custom Hooks &amp; Network Ingestion Layer"]
+        direction TB
+        WS_H["<b>useWebSocketTelemetry</b><br/>Auto-reconnecting client &amp; packet FIFO queue"]
+        HAZ_H["<b>useHazardDetection</b><br/>Client-side instant heuristic safety rules"]
+        AUD_H["<b>useEmergencyAudio</b><br/>Web Audio API procedural dual-tone siren (880Hz / 440Hz)"]
+        WS_H --> HAZ_H --> AUD_H
+    end
 
-hook_layer: React Hooks & Network Layer {
-  style.fill: "#ffffff"
-  style.stroke: "#94a3b8"
+    WS_SRV ==>|"High-Frequency JSON Packets"| WS_H
 
-  ws_hook: useWebSocketTelemetry Hook {
-    shape: step
-    style.fill: "#eff6ff"
-    style.stroke: "#2563eb"
-    desc: "Auto-reconnecting WebSocket client\nIncoming packet queue"
+    subgraph PERF["Rendering Performance &amp; Memory Protection"]
+        direction TB
+        BUFFER["<b>Sliding Window Ring Buffer</b><br/>Max 50-100 pts per metric (slice(-100))<br/>Guarantees O(1) memory bound"]
+        RAF["<b>requestAnimationFrame Frame Throttler</b><br/>Synchronizes multi-packet updates<br/>Redraw dispatched strictly at 60 FPS"]
+        BUFFER --> RAF
+    end
+
+    WS_H -->|"Append sample"| BUFFER
+
+    subgraph VIEWS["Modular Laboratory UI Views"]
+        direction LR
+        V1["<b>Telemetry Command</b><br/>Live dials &amp; Recharts"]
+        V2["<b>Geospatial Map</b><br/>Vector schematic canvas"]
+        V3["<b>Incident Center</b><br/>Safety log &amp; audit table"]
+        V4["<b>AI Assistant</b><br/>Slide-over reasoning drawer"]
+    end
+
+    RAF ==>|"Synchronized 60 FPS update"| V1
+    RAF ==>|"Synchronized 60 FPS update"| V2
+    RAF -.->|"Incident trigger"| V3
+    RAF -.->|"Telemetry context"| V4
+
+    classDef default fill:#ffffff,stroke:#64748b,stroke-width:1px,color:#0f172a;
+    classDef blueprint fill:#f8fafc,stroke:#475569,stroke-width:1.5px,color:#0f172a;
+
+    class WS_SRV,WS_H,HAZ_H,AUD_H,BUFFER,RAF,V1,V2,V3,V4 blueprint;
+```
+
+```mermaid
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": "Inter, Segoe UI, sans-serif",
+    "fontSize": "13px",
+    "primaryColor": "#ffffff",
+    "primaryBorderColor": "#64748b",
+    "primaryTextColor": "#0f172a",
+    "lineColor": "#475569"
   }
+} }%%
+stateDiagram-v2
+    [*] --> NominalMonitoring: Dashboard Mounted
+    
+    state NominalMonitoring {
+        [*] --> SilentAudit: AudioContext Suspended / Idle
+        SilentAudit --> [*]
+    }
 
-  hazard_hook: useHazardDetection Hook {
-    shape: step
-    style.fill: "#fee2e2"
-    style.stroke: "#ef4444"
-    desc: "Real-time client-side hazard heuristics\nEvaluates voltage leaks and flood depths"
-  }
+    NominalMonitoring --> HazardIntercept: Electrocution (V>20 & Depth>10) OR Fire (>60°C)
+    
+    state HazardIntercept {
+        [*] --> LockoutModal: Render Emergency Intercept Dialog
+        LockoutModal --> ArmedAudio: User Interacted & Audio Armed
+        ArmedAudio --> DualToneOscillator: Synthesize 880Hz / 440Hz Square Wave
+    }
 
-  audio_hook: useEmergencyAudio Hook {
-    shape: step
-    style.fill: "#fef3c7"
-    style.stroke: "#d97706"
-    desc: "Procedural Web Audio API siren generator\n880Hz / 440Hz dual-tone oscillator"
-  }
-
-  ws_hook -> hazard_hook: "Raw Packet"
-  hazard_hook -> audio_hook: "Trigger emergency tone if armed"
-}
-
-ws_stream -> hook_layer.ws_hook: "High-Frequency JSON Packets (20-50 Hz)"
-
-perf_pipeline: Rendering Performance Pipeline {
-  style.fill: "#f8fafc"
-  style.stroke: "#64748b"
-
-  sliding_buffer: Sliding Window Ring Buffer {
-    shape: queue
-    style.fill: "#f1f5f9"
-    rule: "Enforces max 50-100 points per series (slice(-100))\nPrevents unbounded RAM expansion"
-  }
-
-  raf_throttler: requestAnimationFrame Throttler {
-    shape: step
-    style.fill: "#ede9fe"
-    style.stroke: "#7c3aed"
-    rule: "Accumulates incoming packets during frame\nDispatches unified state update at 60 FPS"
-  }
-
-  hook_layer.ws_hook -> sliding_buffer: "Enqueue packet"
-  sliding_buffer -> raf_throttler: "Buffer reference"
-}
-
-views_layer: Modular UI Views (components/views/) {
-  style.fill: "#ffffff"
-  style.stroke: "#334155"
-
-  telemetry_view: Live Telemetry Dashboard {
-    shape: rectangle
-    style.fill: "#f8fafc"
-    desc: "Metric cards, Recharts time-series, status gauges"
-  }
-
-  map_view: Live Spatial Map View {
-    shape: rectangle
-    style.fill: "#f8fafc"
-    desc: "Vector SVG schematic, node pins, RF wireless links"
-  }
-
-  alerts_view: Alerts & Incidents Center {
-    shape: rectangle
-    style.fill: "#f8fafc"
-    desc: "PostgreSQL incident table, resolve modal, severity badges"
-  }
-
-  ai_view: AI Diagnostic Assistant {
-    shape: rectangle
-    style.fill: "#f8fafc"
-    desc: "Full view + slide-over drawer with real-time sensor awareness"
-  }
-
-  history_view: Time-Series Historical Explorer {
-    shape: rectangle
-    style.fill: "#f8fafc"
-    desc: "Deep PostgreSQL log search, filters, raw payload inspector"
-  }
-
-  perf_pipeline.raf_throttler -> telemetry_view: "Synchronized render"
-  perf_pipeline.raf_throttler -> map_view: "Synchronized render"
-}
+    HazardIntercept --> SilencedByOperator: Operator Clicks 'Mute Siren'
+    SilencedByOperator --> HazardIntercept: New Distinct Hazard Detected
+    
+    HazardIntercept --> NominalMonitoring: Sensor Drops Below Emergency Threshold
+    SilencedByOperator --> NominalMonitoring: Incident Resolved & Cleared
 ```
 
 ---

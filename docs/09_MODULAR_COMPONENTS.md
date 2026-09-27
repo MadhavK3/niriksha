@@ -6,7 +6,62 @@ NIRIKSHA enforces strict modularity, clean component hierarchy, and single-respo
 
 ## 🏗️ 1. Frontend Component Hierarchy
 
-The frontend is built with **React 19 + TypeScript + Vite**. All monolithic views are decomposed into focused, reusable subcomponents organized by functional domain:
+The frontend is built with **React 19 + TypeScript + Vite**. All monolithic views are decomposed into focused, reusable subcomponents organized by functional domain.
+
+```mermaid
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": "Inter, Segoe UI, -apple-system, BlinkMacSystemFont, Roboto, sans-serif",
+    "fontSize": "13px",
+    "primaryColor": "#ffffff",
+    "primaryBorderColor": "#64748b",
+    "primaryTextColor": "#0f172a",
+    "lineColor": "#475569",
+    "clusterBkg": "#f8fafc",
+    "clusterBorder": "#94a3b8"
+  },
+  "flowchart": { "curve": "basis", "htmlLabels": true, "nodeSpacing": 25, "rankSpacing": 40 }
+} }%%
+flowchart TB
+    subgraph UI_SHELL["Application Shell &amp; Global State"]
+        direction LR
+        APP["<b>App.tsx</b><br/>Global layout &amp; navigation"]
+        HDR["<b>Header.tsx</b><br/>Status badges &amp; mute button"]
+        SBR["<b>Sidebar.tsx</b><br/>Tab router navigation"]
+        APP --- HDR
+        APP --- SBR
+    end
+
+    subgraph HOOK_LAYER["Domain Custom Hooks"]
+        direction LR
+        H1["<code>useWebSocketTelemetry</code><br/>Live packet FIFO queue"]
+        H2["<code>useHazardDetection</code><br/>Instant client safety checks"]
+        H3["<code>useEmergencyAudio</code><br/>Web Audio siren synthesis"]
+        H1 --> H2 --> H3
+    end
+
+    APP --> HOOK_LAYER
+
+    subgraph VIEWS["Focused Domain Views (Single Responsibility &lt; 200 Lines)"]
+        direction LR
+        DASH["<b>DashboardView</b><br/>Metric tiles &amp; charts"]
+        MAP["<b>MapView</b><br/>Vector canvas &amp; links"]
+        ALR["<b>AlertsView</b><br/>Incident audit &amp; resolve"]
+        REP["<b>ReportsView</b><br/>Compliance tables &amp; CSV"]
+        FLT["<b>FleetView</b><br/>Mesh inventory &amp; RSSI"]
+        SET["<b>SettingsView</b><br/>COM/MQTT &amp; thresholds"]
+    end
+
+    HOOK_LAYER ==>|"rAF 60 FPS throttled stream"| DASH
+    HOOK_LAYER ==>|"rAF 60 FPS throttled stream"| MAP
+    HOOK_LAYER -.->|"Live hazard events"| ALR
+
+    classDef default fill:#ffffff,stroke:#64748b,stroke-width:1px,color:#0f172a;
+    classDef blueprint fill:#f8fafc,stroke:#475569,stroke-width:1.5px,color:#0f172a;
+
+    class APP,HDR,SBR,H1,H2,H3,DASH,MAP,ALR,REP,FLT,SET blueprint;
+```
 
 ```
 frontend/src/components/

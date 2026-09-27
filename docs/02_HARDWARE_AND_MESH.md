@@ -8,87 +8,96 @@ This document specifies the embedded hardware instrumentation, microcontroller p
 
 NIRIKSHA deploys three distinct physical nodes across an urban monitoring sector. Each node is powered by an Espressif ESP32-WROOM-32 microcontroller communicating over an ad-hoc 2.4 GHz radio mesh using `painlessMesh` (built on ESP-NOW Wi-Fi broadcast frames).
 
-```d2
-direction: down
+```mermaid
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": "Inter, Segoe UI, -apple-system, BlinkMacSystemFont, Roboto, sans-serif",
+    "fontSize": "13px",
+    "primaryColor": "#ffffff",
+    "primaryBorderColor": "#64748b",
+    "primaryTextColor": "#0f172a",
+    "lineColor": "#475569",
+    "clusterBkg": "#f8fafc",
+    "clusterBorder": "#94a3b8"
+  },
+  "flowchart": { "curve": "basis", "htmlLabels": true, "nodeSpacing": 30, "rankSpacing": 45 }
+} }%%
+flowchart TB
+    subgraph MESH["2.4 GHz painlessMesh RF Network · SSID: NIRIKSHA_MESH · Ch 6"]
+        direction TB
 
-mesh_network: 2.4 GHz RF painlessMesh Network (SSID: NIRIKSHA_MESH) {
-  style.fill: "#f8fafc"
-  style.stroke: "#94a3b8"
+        subgraph NODES["Field Sensor Stations (ESP32-WROOM-32)"]
+            direction LR
+            P1["<b>POLE 1 (Flood &amp; Voltage Node)</b><br/>━━━━━━━━━━━━━━━━━━━━<br/>• GPIO 34 (ADC1): ZMPT101B AC Leakage<br/>• GPIO 18/19: HC‑SR04 Ultrasonic Trigger/Echo<br/>• GPIO 27 (DI): SW‑520D Tilt Ball Switch<br/>• GPIO 35 (ADC1): MQ‑7 Carbon Monoxide<br/>• GPIO 32/33: MQ‑135 Air &amp; MQ‑136 H₂S<br/>• GPIO 25 (ADC2): MQ‑2 Combustible/Smoke<br/><i>TX Staggered: 2300 ms</i>"]
 
-  p1_node: Pole 1 Node (ESP32) {
-    shape: rectangle
-    style.fill: "#f0fdf4"
-    style.stroke: "#16a34a"
+            P2["<b>POLE 2 (Grid &amp; Gas Metering Node)</b><br/>━━━━━━━━━━━━━━━━━━━━<br/>• GPIO 16/17 (UART2): PZEM‑004T Modbus<br/>  <i>(Voltage, Current, Power, Energy, PF)</i><br/>• GPIO 27 (DI): SW‑520D Tilt Ball Switch<br/>• GPIO 35 (ADC1): MQ‑7 Carbon Monoxide<br/>• GPIO 32/33: MQ‑135 Air &amp; MQ‑136 H₂S<br/>• GPIO 25 (ADC2): MQ‑2 Combustible/Smoke<br/><i>TX Staggered: 2500 ms</i>"]
+        end
 
-    pins1: Pin Allocation {
-      shape: table
-      "GPIO 34 (ADC1)": "ZMPT101B AC Voltage Leakage Probe"
-      "GPIO 18 (DO)": "HC-SR04 Trigger Pin"
-      "GPIO 19 (DI)": "HC-SR04 Echo Pin"
-      "GPIO 27 (DI)": "SW-520D Tilt Ball Switch (Internal Pullup)"
-      "GPIO 35 (ADC1)": "MQ-7 Carbon Monoxide (Analog)"
-      "GPIO 32 (ADC1)": "MQ-135 Air Quality Sensor"
-      "GPIO 33 (ADC1)": "MQ-136 Hydrogen Sulfide Sensor"
-      "GPIO 25 (ADC2)": "MQ-2 Combustible Gas / Smoke"
+        subgraph GATEWAY["Root Gateway Station (ESP32)"]
+            P3["<b>POLE 3 (Root Sink Hub)</b><br/>━━━━━━━━━━━━━━━━━━━━<br/>• painlessMesh Root Coordinator (mesh.setRoot: true)<br/>• Serial UART Bridge @ 115200 Baud 8‑N‑1<br/>• Frame Formatter: 'MESH_JSON:{...}\n'<br/>• Collects &amp; Relays Multi-Hop Telemetry Packets"]
+        end
+
+        P1 -.->|"ESP-NOW Wi-Fi Broadcast<br/>(Channel 6 · 2300ms)"| P3
+        P2 -.->|"ESP-NOW Wi-Fi Broadcast<br/>(Channel 6 · 2500ms)"| P3
+    end
+
+    subgraph HOST["Industrial Command Host / Server"]
+        COM["<b>USB Serial Host Controller</b><br/><code>/dev/ttyUSB0</code> or <code>COMx</code><br/>115200 Baud / 8-N-1"]
+    end
+
+    P3 ==>|"USB Serial UART Bridge"| COM
+
+    classDef default fill:#ffffff,stroke:#64748b,stroke-width:1px,color:#0f172a;
+    classDef nodeCard fill:#f8fafc,stroke:#475569,stroke-width:1.5px,color:#0f172a;
+    classDef hubCard fill:#f1f5f9,stroke:#334155,stroke-width:2px,color:#0f172a;
+
+    class P1,P2 nodeCard;
+    class P3,COM hubCard;
+```
+
+```mermaid
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": "Inter, Segoe UI, sans-serif",
+    "fontSize": "13px",
+    "primaryColor": "#ffffff",
+    "primaryBorderColor": "#64748b",
+    "primaryTextColor": "#0f172a",
+    "lineColor": "#475569"
+  }
+} }%%
+stateDiagram-v2
+    [*] --> HardwareInit: Bootloader Execution
+    
+    state HardwareInit {
+        [*] --> CalibrateSensors: Load Baseline & Noise Cutoff
+        CalibrateSensors --> InitPins: Configure ADC1 & UARTs
+        InitPins --> [*]
     }
-    task1: "Transmission Task: Every 2300 ms"
-  }
 
-  p2_node: Pole 2 Node (ESP32) {
-    shape: rectangle
-    style.fill: "#eff6ff"
-    style.stroke: "#2563eb"
-
-    pins2: Pin Allocation {
-      shape: table
-      "GPIO 16 (RX2)": "PZEM-004T V3.0 TX (Modbus RTU)"
-      "GPIO 17 (TX2)": "PZEM-004T V3.0 RX (Modbus RTU)"
-      "GPIO 27 (DI)": "SW-520D Tilt Ball Switch (Internal Pullup)"
-      "GPIO 35 (ADC1)": "MQ-7 Carbon Monoxide (Analog)"
-      "GPIO 32 (ADC1)": "MQ-135 Air Quality Sensor"
-      "GPIO 33 (ADC1)": "MQ-136 Hydrogen Sulfide Sensor"
-      "GPIO 25 (ADC2)": "MQ-2 Combustible Gas / Smoke"
+    HardwareInit --> MeshScan: mesh.init(NIRIKSHA_MESH, Ch 6)
+    
+    state MeshScan {
+        [*] --> ChannelSearch: Scan ESP-NOW Beacons
+        ChannelSearch --> PeerConnect: Node Handshake
+        PeerConnect --> [*]
     }
-    task2: "Transmission Task: Every 2500 ms"
-  }
 
-  p3_hub: Pole 3 Root Gateway Hub (ESP32) {
-    shape: rectangle
-    style.fill: "#fef3c7"
-    style.stroke: "#d97706"
-
-    hub_features: Gateway Capabilities {
-      shape: table
-      "Mesh Role": "Root Sink Node (mesh.setRoot(true))"
-      "Serial UART": "GPIO 1 (TX0) -> USB Bridge @ 115200 Baud"
-      "Frame Prefix": "'MESH_JSON:' appended to newline"
-      "Mesh Router": "Collects packets from Pole 1 & Pole 2"
+    MeshScan --> SynchronizedCadence: Connection Established
+    
+    state SynchronizedCadence {
+        [*] --> SampleTransducers: Run ADC / Modbus Sampling
+        SampleTransducers --> ValidateRanges: Check Cutoffs & Framing
+        ValidateRanges --> StaggerDelay: Wait Node Slot (2300ms / 2500ms)
+        StaggerDelay --> BroadcastFrame: Send ESP-NOW JSON Packet
+        BroadcastFrame --> SampleTransducers
     }
-  }
 
-  p1_node -> p3_hub: "ESP-NOW Broadcast (JSON Frame)" {
-    style.stroke: "#16a34a"
-    style.stroke-dash: 4
-  }
-  p2_node -> p3_hub: "ESP-NOW Broadcast (JSON Frame)" {
-    style.stroke: "#2563eb"
-    style.stroke-dash: 4
-  }
-}
-
-host_pc: Industrial Field Computer / Server {
-  style.fill: "#ffffff"
-  style.stroke: "#334155"
-
-  com_port: "Host USB Port (/dev/ttyUSB0 or COMx)" {
-    shape: cylinder
-  }
-
-  p3_hub -> com_port: "USB UART Cable (115200 8-N-1)" {
-    style.stroke: "#d97706"
-    style.stroke-width: 2
-  }
-}
+    SynchronizedCadence --> MeshReheal: RF Link Lost / Node Drop
+    MeshReheal --> MeshScan: Re-scan & Re-route Mesh Path
+    SynchronizedCadence --> [*]: Power Cycle / Hard Reset
 ```
 
 ---

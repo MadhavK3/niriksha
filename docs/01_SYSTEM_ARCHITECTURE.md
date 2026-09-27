@@ -12,105 +12,80 @@ The following Mermaid diagram illustrates the complete end-to-end data pipeline:
 %%{init: {
   "theme": "base",
   "themeVariables": {
-    "fontFamily": "Inter, Segoe UI, Helvetica, Arial, sans-serif",
-    "fontSize": "15px",
+    "fontFamily": "Inter, Segoe UI, -apple-system, BlinkMacSystemFont, Roboto, sans-serif",
+    "fontSize": "13px",
     "primaryColor": "#ffffff",
-    "primaryBorderColor": "#94a3b8",
+    "primaryBorderColor": "#64748b",
     "primaryTextColor": "#0f172a",
-    "lineColor": "#64748b",
+    "lineColor": "#475569",
     "clusterBkg": "#f8fafc",
-    "clusterBorder": "#cbd5e1",
+    "clusterBorder": "#94a3b8",
     "edgeLabelBackground": "#ffffff"
   },
-  "flowchart": { "curve": "basis", "htmlLabels": true, "nodeSpacing": 40, "rankSpacing": 55 }
+  "flowchart": { "curve": "basis", "htmlLabels": true, "nodeSpacing": 30, "rankSpacing": 45 }
 } }%%
 flowchart TB
 
-    subgraph FIELD["FIELD LAYER  ·  Wireless Sensor Mesh — painlessMesh 2.4GHz RF"]
+    subgraph FIELD["FIELD LAYER · Wireless Sensor Mesh — painlessMesh 2.4GHz RF"]
         direction LR
         P1["<b>POLE 1</b> — Flood &amp; Submersion Node<br/>─────────────<br/>ZMPT101B · Voltage Leak<br/>HC‑SR04 · Ultrasonic Depth<br/>SW‑520D · Tilt Switch<br/>MQ Gas Array<br/><i>TX interval 2300 ms</i>"]
         P2["<b>POLE 2</b> — Grid &amp; Power Metering Node<br/>─────────────<br/>PZEM‑004T · V / I / W / kWh / PF<br/>SW‑520D · Tilt Switch<br/>MQ Gas Array<br/><i>TX interval 2500 ms</i>"]
         P3["<b>POLE 3</b> — Root Gateway Hub<br/>─────────────<br/>painlessMesh Root Sink<br/>Serial UART Bridge @ 115200 baud"]
-        P1 -- "RF mesh hop" --> P3
-        P2 -- "RF mesh hop" --> P3
+        P1 -. "RF mesh hop" .-> P3
+        P2 -. "RF mesh hop" .-> P3
     end
 
-    subgraph INGEST["INGESTION LAYER  ·  FastAPI Backend — Dual Concurrent Protocols"]
+    subgraph INGEST["INGESTION LAYER · FastAPI Backend — Dual Concurrent Protocols"]
         direction LR
-        SER["<b>PySerial Worker</b><br/><code>serial_manager.py</code><br/>daemon thread<br/>exponential reconnect backoff"]
-        MQ["<b>Async MQTT Ingestor</b><br/><code>mqtt_manager.py</code> · aiomqtt<br/>topic: niriksha/poles/+/telemetry<br/>broker :1883"]
-        NORM["<b>Unified Schema Normalizer</b><br/><code>normalizer.py</code><br/>maps payload → canonical schema<br/>inactive sensor → NOT_CONNECTED"]
+        SER["<b>PySerial Worker</b><br/><code>serial_manager.py</code><br/>Daemon thread · Exponential backoff"]
+        MQ["<b>Async MQTT Ingestor</b><br/><code>mqtt_manager.py</code> · aiomqtt<br/>topic: niriksha/poles/+/telemetry"]
+        NORM["<b>Unified Schema Normalizer</b><br/><code>normalizer.py</code><br/>Canonical schema mapping<br/>Inactive → NOT_CONNECTED"]
         SER --> NORM
         MQ --> NORM
     end
 
-    P3 == "USB Serial UART<br/>(COM port)" ==> SER
+    P3 ==>|"USB Serial UART (COM port)"| SER
 
-    subgraph ANALYTICS["ANALYTICS LAYER  ·  Algorithmic Signal Processing Pipeline"]
+    subgraph ANALYTICS["ANALYTICS LAYER · Algorithmic Signal Processing Pipeline"]
         direction LR
         KAL["<b>1D Kalman Filter Bank</b><br/><code>kalman.py</code><br/>Q/R‑tuned noise rejection"]
         ANOM["<b>Statistical Anomaly Bank</b><br/><code>anomaly.py</code><br/>EWMA baseline · Z‑score surge<br/>CUSUM drift detection"]
-        FUS["<b>Multi‑Sensor Hazard Fusion</b><br/><code>fusion_engine.py</code><br/>Electrocution Risk Index<br/>Fire Combustion Index"]
+        FUS["<b>Multi‑Sensor Hazard Fusion</b><br/><code>fusion_engine.py</code><br/>Electrocution Risk Index<br/>Fire &amp; Combustion Index"]
         KAL --> ANOM --> FUS
     end
 
-    NORM -- "normalized<br/>float stream" --> KAL
+    NORM -->|"Normalized float stream"| KAL
 
-    subgraph FANOUT["DISTRIBUTION LAYER  ·  Decoupled Fan‑Out"]
+    subgraph FANOUT["DISTRIBUTION LAYER · Decoupled Fan‑Out & Persistence"]
         direction LR
-        BUF[("In‑Memory Batch Buffer<br/><code>buffer.py</code><br/>flush @ 250‑300 ms or 50 rows")]
-        WS["WebSocket Connection Manager<br/><code>connection_manager.py</code><br/>thread‑safe asyncio broadcast"]
-        AI["Offline AI Diagnostics<br/><code>diagnostics.py</code> + <code>ollama.py</code><br/>rule heuristics + local LLM"]
+        BUF[("<b>In‑Memory Batch Buffer</b><br/><code>buffer.py</code><br/>Flush @ 250‑300 ms or 50 rows")]
+        WS["<b>WebSocket Registry</b><br/><code>connection_manager.py</code><br/>Asyncio event broadcast"]
+        AI["<b>Offline AI Diagnostics</b><br/><code>diagnostics.py</code> + <code>ollama.py</code><br/>Rule heuristics + local LLM"]
     end
 
-    FUS -- "enriched record" --> BUF
-    FUS -- "live broadcast" --> WS
-    FUS -- "context snapshot" --> AI
+    FUS -->|"Enriched record"| BUF
+    FUS -->|"Live packet"| WS
+    FUS -.->|"Context snapshot"| AI
 
-    PG[("PostgreSQL 14+<br/>Time‑Series Store<br/>asyncpg pool · executemany")]
-    BUF == "multi‑row batch<br/>transaction" ==> PG
+    PG[("<b>PostgreSQL 14+</b><br/>Time‑Series Store<br/>asyncpg pool · executemany")]
+    BUF ==>|"Multi‑row batch transaction"| PG
 
-    subgraph CLIENT["CLIENT LAYER  ·  React 19 + Vite Dashboard — Air‑Gapped"]
+    subgraph CLIENT["CLIENT LAYER · React 19 + Vite Dashboard — Air‑Gapped"]
         direction LR
-        SWIN["Sliding Window State<br/>50‑100 pts / metric series"]
-        RAF["requestAnimationFrame Throttler<br/>redraw locked to 60 FPS"]
-        UI["UI Views<br/>Live Telemetry · Spatial Map<br/>Alerts · Reports · AI Drawer"]
+        SWIN["<b>Sliding Window State</b><br/>Max 50‑100 pts per metric"]
+        RAF["<b>rAF Frame Throttler</b><br/>Rendering locked to 60 FPS"]
+        UI["<b>UI Command Center</b><br/>Live Telemetry · Spatial Map<br/>Alerts · Reports · AI Drawer"]
         SWIN --> RAF --> UI
     end
 
-    WS == "WebSocket<br/>/ws/telemetry" ==> SWIN
+    WS ==>|"WebSocket /ws/telemetry"| SWIN
 
-    classDef pole1 fill:#f0fdf4,stroke:#16a34a,stroke-width:1.5px,color:#14532d;
-    classDef pole2 fill:#eff6ff,stroke:#2563eb,stroke-width:1.5px,color:#1e3a5f;
-    classDef pole3 fill:#fef3c7,stroke:#d97706,stroke-width:1.5px,color:#78350f;
-    classDef ingest fill:#f1f5f9,stroke:#475569,stroke-width:1.5px,color:#1e293b;
-    classDef norm fill:#e0e7ff,stroke:#4f46e5,stroke-width:1.5px,color:#312e81;
-    classDef analytics fill:#ede9fe,stroke:#7c3aed,stroke-width:1.5px,color:#4c1d95;
-    classDef fusion fill:#fee2e2,stroke:#ef4444,stroke-width:1.5px,color:#7f1d1d;
-    classDef buffer fill:#fef9c3,stroke:#ca8a04,stroke-width:1.5px,color:#713f12;
-    classDef ws fill:#dbeafe,stroke:#2563eb,stroke-width:1.5px,color:#1e3a5f;
-    classDef ai fill:#ccfbf1,stroke:#0d9488,stroke-width:1.5px,color:#134e4a;
-    classDef storage fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#14532d;
-    classDef client fill:#f8fafc,stroke:#3b82f6,stroke-width:1.5px,color:#1e3a5f;
+    classDef default fill:#ffffff,stroke:#64748b,stroke-width:1px,color:#0f172a;
+    classDef blueprint fill:#f8fafc,stroke:#475569,stroke-width:1.5px,color:#0f172a;
+    classDef storageNode fill:#f1f5f9,stroke:#334155,stroke-width:2px,color:#0f172a;
 
-    class P1 pole1;
-    class P2 pole2;
-    class P3 pole3;
-    class SER,MQ ingest;
-    class NORM norm;
-    class KAL,ANOM analytics;
-    class FUS fusion;
-    class BUF buffer;
-    class WS ws;
-    class AI ai;
-    class PG storage;
-    class SWIN,RAF,UI client;
-
-    style FIELD fill:#ffffff,stroke:#cbd5e1,stroke-width:1px
-    style INGEST fill:#ffffff,stroke:#cbd5e1,stroke-width:1px
-    style ANALYTICS fill:#ffffff,stroke:#cbd5e1,stroke-width:1px
-    style FANOUT fill:#ffffff,stroke:#cbd5e1,stroke-width:1px
-    style CLIENT fill:#ffffff,stroke:#cbd5e1,stroke-width:1px
+    class P1,P2,P3,SER,MQ,NORM,KAL,ANOM,FUS,WS,AI,SWIN,RAF,UI blueprint;
+    class BUF,PG storageNode;
 ```
 
 ---
@@ -169,66 +144,54 @@ The table below traces a telemetry metric from physical transducer conversion to
 
 The platform implements strict boundary isolation so that failures in one tier do not cascade:
 
-```d2
-direction: down
+```mermaid
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": "Inter, Segoe UI, sans-serif",
+    "fontSize": "13px",
+    "primaryColor": "#ffffff",
+    "primaryBorderColor": "#64748b",
+    "primaryTextColor": "#0f172a",
+    "lineColor": "#475569",
+    "clusterBkg": "#f8fafc",
+    "clusterBorder": "#94a3b8"
+  },
+  "flowchart": { "curve": "basis", "htmlLabels": true, "nodeSpacing": 25, "rankSpacing": 40 }
+} }%%
+flowchart TB
+    subgraph HARDWARE_FAIL["Physical / Serial Link Domain"]
+        direction TB
+        F1["<b>Root Gateway USB Disconnected</b><br/>Hardware unseated / cable cut"]
+        H1["<b>PySerial Exponential Backoff</b><br/><code>serial_manager.py</code> catches SerialException<br/>Scans COM ports every 1-2s · No crash"]
+        M1["<b>MQTT Parallel Ingest Active</b><br/><code>mqtt_manager.py</code> continues receiving field frames"]
+        F1 -->|"Exception raised"| H1
+        F1 -.->|"Zero impact"| M1
+    end
 
-fault_tree: Failure Isolation Architecture {
-  style.fill: "#ffffff"
-  style.stroke: "#e2e8f0"
+    subgraph STORAGE_FAIL["Database Persistence Domain"]
+        direction TB
+        F2["<b>PostgreSQL Database Unreachable</b><br/>Service restart / network drop"]
+        H2["<b>Buffer Ring Retention</b><br/><code>buffer.py</code> retains recent telemetry tuples<br/><code>asyncpg</code> background pool reconnects"]
+        W1["<b>WebSocket Real-Time Passthrough</b><br/>Live client telemetry broadcasts continue at 60 FPS"]
+        F2 -->|"Pool error caught"| H2
+        F2 -.->|"Bypasses DB"| W1
+    end
 
-  serial_fail: Physical USB Cable Disconnected {
-    shape: rectangle
-    style.fill: "#fee2e2"
-    style.stroke: "#ef4444"
-  }
+    subgraph AI_FAIL["Machine Reasoning Domain"]
+        direction TB
+        F3["<b>Ollama Local LLM Unavailable</b><br/>Daemon offline or prompt timeout > 5s"]
+        H3["<b>Deterministic Safety Rule Engine</b><br/><code>diagnostics.py</code> instant heuristic verification<br/>0ms fallback audit delivered to UI"]
+        F3 -->|"Circuit breaker tripped"| H3
+    end
 
-  serial_handler: PySerial Exponential Backoff Loop {
-    shape: step
-    style.fill: "#fef3c7"
-    style.stroke: "#f59e0b"
-    desc: "Retries COM port scan every 1-2s; backend does NOT crash"
-  }
+    classDef failure fill:#fef2f2,stroke:#ef4444,stroke-width:1.5px,color:#991b1b;
+    classDef handler fill:#f8fafc,stroke:#475569,stroke-width:1.5px,color:#0f172a;
+    classDef healthy fill:#f0fdf4,stroke:#16a34a,stroke-width:1.5px,color:#166534;
 
-  mqtt_active: MQTT Broker Continues Ingestion {
-    shape: rectangle
-    style.fill: "#dcfce7"
-    style.stroke: "#16a34a"
-    desc: "Secondary telemetry path maintains full ingestion"
-  }
-
-  serial_fail -> serial_handler: "Triggers SerialException"
-  serial_fail -> mqtt_active: "Zero impact on MQTT protocol"
-
-  db_down: PostgreSQL Database Unreachable {
-    shape: rectangle
-    style.fill: "#fee2e2"
-    style.stroke: "#ef4444"
-  }
-
-  db_handler: Buffer Ring Retention & WebSocket Passthrough {
-    shape: step
-    style.fill: "#fef3c7"
-    style.stroke: "#f59e0b"
-    desc: "Live WebSockets continue streaming; DB flushes retry on re-auth"
-  }
-
-  db_down -> db_handler: "Pool reconnects in background"
-
-  ollama_offline: Ollama LLM Service Stopped {
-    shape: rectangle
-    style.fill: "#fee2e2"
-    style.stroke: "#ef4444"
-  }
-
-  heuristic_fallback: Deterministic Rule Diagnostics {
-    shape: step
-    style.fill: "#dbeafe"
-    style.stroke: "#2563eb"
-    desc: "Heuristics evaluate immediately (0ms); operator receives rule report"
-  }
-
-  ollama_offline -> heuristic_fallback: "Circuit breaker routes to rule engine"
-}
+    class F1,F2,F3 failure;
+    class H1,H2,H3 handler;
+    class M1,W1 healthy;
 ```
 
 1. **Hardware Disconnection**: If the Root Gateway USB cable is detached, `serial_manager.py` catches `serial.SerialException`, logs the event, and enters an automatic retry loop. The FastAPI server and WebSocket broadcasts remain fully operational.

@@ -8,155 +8,73 @@ For detailed subsystem documentation, refer to the [Technical Documentation Hub]
 
 ## 1. System Topology & Layered Pipeline
 
-```d2
-direction: right
+```mermaid
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": "Inter, Segoe UI, -apple-system, BlinkMacSystemFont, Roboto, sans-serif",
+    "fontSize": "13px",
+    "primaryColor": "#ffffff",
+    "primaryBorderColor": "#64748b",
+    "primaryTextColor": "#0f172a",
+    "lineColor": "#475569",
+    "clusterBkg": "#f8fafc",
+    "clusterBorder": "#94a3b8"
+  },
+  "flowchart": { "curve": "basis", "htmlLabels": true, "nodeSpacing": 25, "rankSpacing": 40 }
+} }%%
+flowchart TB
+    subgraph EDGE["Field Sensor Nodes (2.4 GHz RF Mesh)"]
+        direction LR
+        P1["<b>Pole 1: Flood &amp; Submersion</b><br/>ZMPT101B · HC-SR04<br/>SW-520D · MQ Gas Array<br/><i>TX: 2300ms</i>"]
+        P2["<b>Pole 2: Grid &amp; Current</b><br/>PZEM-004T (V, I, W, kWh, PF)<br/>SW-520D · MQ Gas Array<br/><i>TX: 2500ms</i>"]
+        P3["<b>Pole 3: Gateway Hub</b><br/>painlessMesh Root Sink<br/>Serial UART Bridge (115200)"]
+        P1 -.->|"painlessMesh RF"| P3
+        P2 -.->|"painlessMesh RF"| P3
+    end
 
-edge: Field Sensor Nodes (2.4 GHz RF Mesh) {
-  style.fill: "#f8fafc"
-  style.stroke: "#94a3b8"
+    subgraph INGEST["Dual Concurrent Protocols (FastAPI)"]
+        direction LR
+        SER["<b>PySerial Ingestor</b><br/>Daemon thread · 2s backoff"]
+        MQ["<b>Async MQTT Ingestor</b><br/>aiomqtt client (TCP 1883)"]
+        NORM["<b>Unified Normalizer</b><br/>Maps payload → Canonical schema<br/>Inactive → NOT_CONNECTED"]
+        SER --> NORM
+        MQ --> NORM
+    end
 
-  p1: Pole 1: Flood & Submersion {
-    shape: rectangle
-    style.fill: "#f0fdf4"
-    style.stroke: "#16a34a"
-    sensors: "ZMPT101B (Voltage)\nHC-SR04 (Ultrasonic Depth)\nSW-520D (Tilt Switch)\nMQ Gas Array"
-    rate: "Transmit: 2300ms"
-  }
+    P3 ==>|"USB UART Cable (COMx)"| SER
 
-  p2: Pole 2: Grid & Current {
-    shape: rectangle
-    style.fill: "#eff6ff"
-    style.stroke: "#2563eb"
-    sensors: "PZEM-004T (V, I, W, kWh, PF)\nSW-520D (Tilt Switch)\nMQ Gas Array"
-    rate: "Transmit: 2500ms"
-  }
+    subgraph PIPELINE["Algorithmic Signal Processing Pipeline"]
+        direction LR
+        KAL["<b>1D Kalman Filter Bank</b><br/>Tuned Q/R noise rejection"]
+        ANOM["<b>Streaming Anomaly Bank</b><br/>EWMA baseline · CUSUM drift"]
+        FUS["<b>Hazard Fusion Engine</b><br/>Electrocution &amp; Fire Indices"]
+        KAL --> ANOM --> FUS
+    end
 
-  p3: Pole 3: Root Gateway Hub Node {
-    shape: rectangle
-    style.fill: "#fef3c7"
-    style.stroke: "#d97706"
-    role: "painlessMesh Root Sink\nSerial UART Bridge (115200)"
-  }
+    NORM -->|"Normalized floats"| KAL
 
-  p1 -> p3: "painlessMesh 2.4GHz RF" {
-    style.stroke: "#16a34a"
-    style.stroke-dash: 3
-  }
-  p2 -> p3: "painlessMesh 2.4GHz RF" {
-    style.stroke: "#2563eb"
-    style.stroke-dash: 3
-  }
-}
+    subgraph FANOUT["Decoupled Fan-Out &amp; Client Distribution"]
+        direction LR
+        BUF[("<b>Memory Batch Buffer</b><br/>Flush @ 250-300ms or 50 items")]
+        WS["<b>WebSocket Hub</b><br/>Thread-safe asyncio broadcaster"]
+    end
 
-ingest: Dual Ingestion Protocols {
-  style.fill: "#ffffff"
-  style.stroke: "#64748b"
+    FUS -->|"Enriched record"| BUF
+    FUS -->|"Real-time stream"| WS
 
-  pyserial: PySerial Ingestion Worker (serial_manager.py) {
-    shape: step
-    style.fill: "#fef3c7"
-    style.stroke: "#d97706"
-    desc: "Dedicated daemon thread with exponential reconnect backoff"
-  }
+    PG[("<b>PostgreSQL 14+</b><br/>asyncpg pool · executemany")]
+    BUF ==>|"Multi-row batch transaction"| PG
 
-  mqtt: Async MQTT Ingestor (mqtt_manager.py) {
-    shape: step
-    style.fill: "#eff6ff"
-    style.stroke: "#2563eb"
-    desc: "aiomqtt client on TCP 1883"
-  }
+    CLIENT["<b>React 19 + Vite Dashboard (Air-Gapped)</b><br/>Sliding window (50-100 pts) · rAF 60 FPS throttler · Web Audio siren"]
+    WS ==>|"WebSocket /ws/telemetry"| CLIENT
 
-  edge.p3 -> pyserial: "USB UART (COM Port)" {
-    style.stroke: "#d97706"
-    style.stroke-width: 2
-  }
-}
+    classDef default fill:#ffffff,stroke:#64748b,stroke-width:1px,color:#0f172a;
+    classDef blueprint fill:#f8fafc,stroke:#475569,stroke-width:1.5px,color:#0f172a;
+    classDef storageNode fill:#f1f5f9,stroke:#334155,stroke-width:2px,color:#0f172a;
 
-norm: Unified Normalizer (normalizer.py) {
-  shape: class
-  style.fill: "#e0e7ff"
-  style.stroke: "#4f46e5"
-  desc: "Maps payload to Unified Schema\nInactive sensors -> NOT_CONNECTED / null"
-}
-
-ingest.pyserial -> norm: "Raw text lines"
-ingest.mqtt -> norm: "Decoded JSON"
-
-analytics: Algorithmic Signal Processing Pipeline {
-  style.fill: "#f8fafc"
-  style.stroke: "#64748b"
-
-  kalman: 1D Linear Kalman Filter (kalman.py) {
-    shape: step
-    style.fill: "#ede9fe"
-    style.stroke: "#7c3aed"
-    desc: "Tuned Q/R noise rejection on ADC & Ultrasonic sensors"
-  }
-
-  anomaly: Statistical Anomaly Bank (anomaly.py) {
-    shape: step
-    style.fill: "#ede9fe"
-    style.stroke: "#7c3aed"
-    desc: "Streaming EWMA mean/variance & CUSUM drift detection"
-  }
-
-  fusion: Multi-Sensor Hazard Fusion (fusion_engine.py) {
-    shape: step
-    style.fill: "#fee2e2"
-    style.stroke: "#ef4444"
-    desc: "Electrocution Risk Index & Fire Combustion Index"
-  }
-
-  norm -> kalman: "Normalized floats"
-  kalman -> anomaly: "Filtered values"
-  anomaly -> fusion: "Drift flags + clean values"
-}
-
-fanout: Decoupled Fan-Out Architecture {
-  style.fill: "#ffffff"
-  style.stroke: "#cbd5e1"
-
-  buffer: Decoupled In-Memory Batch Buffer (buffer.py) {
-    shape: queue
-    style.fill: "#fef9c3"
-    style.stroke: "#ca8a04"
-    desc: "Flushed every 250-300ms or 50 items"
-  }
-
-  ws_hub: WebSocket Connection Manager (connection_manager.py) {
-    shape: step
-    style.fill: "#dbeafe"
-    style.stroke: "#2563eb"
-    desc: "Thread-safe asyncio broadcast registry"
-  }
-
-  analytics.fusion -> buffer: "Enriched record"
-  analytics.fusion -> ws_hub: "Live broadcast"
-}
-
-storage: PostgreSQL Time-Series Database {
-  shape: cylinder
-  style.fill: "#dcfce7"
-  style.stroke: "#16a34a"
-  desc: "Indexed telemetry & alerts tables via asyncpg pool"
-}
-
-client: React 19 + Vite Dashboard (Air-Gapped) {
-  shape: rectangle
-  style.fill: "#ffffff"
-  style.stroke: "#2563eb"
-  style.stroke-width: 2
-  features: "Sliding window state (50-100 pts)\nrequestAnimationFrame (60 FPS)\nProcedural Web Audio API Siren\nLaboratory light aesthetic (bg-slate-50)"
-}
-
-fanout.buffer -> storage: "Multi-row executemany batch" {
-  style.stroke: "#16a34a"
-  style.stroke-width: 2
-}
-fanout.ws_hub -> client: "WebSocket /ws/telemetry" {
-  style.stroke: "#2563eb"
-  style.stroke-width: 2
-}
+    class P1,P2,P3,SER,MQ,NORM,KAL,ANOM,FUS,WS,CLIENT blueprint;
+    class BUF,PG storageNode;
 ```
 
 ---
@@ -213,55 +131,54 @@ SIH/
 
 ## 3. Algorithmic Telemetry Processing Pipeline
 
-```d2
-direction: down
+```mermaid
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": "Inter, Segoe UI, -apple-system, BlinkMacSystemFont, Roboto, sans-serif",
+    "fontSize": "13px",
+    "primaryColor": "#ffffff",
+    "primaryBorderColor": "#64748b",
+    "primaryTextColor": "#0f172a",
+    "lineColor": "#475569",
+    "clusterBkg": "#f8fafc",
+    "clusterBorder": "#94a3b8"
+  },
+  "flowchart": { "curve": "basis", "htmlLabels": true, "nodeSpacing": 25, "rankSpacing": 40 }
+} }%%
+flowchart TB
+    RAW["<b>Raw Transducer Reading (zₖ)</b><br/>Noisy ADC, Ultrasonic echo, Gas conductance"]
 
-signal_in: Raw Transducer Value z_k {
-  shape: document
-  style.fill: "#f8fafc"
-}
+    subgraph KALMAN["Stage 1: 1D Discrete-Time Linear Kalman Filter"]
+        direction TB
+        K_OP["1. Predict: x̂ₖ|ₖ₋₁ = x̂ₖ₋₁|ₖ₋₁, Pₖ|ₖ₋₁ = Pₖ₋₁ + Q<br/>2. Gain: Kₖ = Pₖ|ₖ₋₁ / (Pₖ|ₖ₋₁ + R)<br/>3. Update: x̂ₖ|ₖ = x̂ₖ|ₖ₋₁ + Kₖ(zₖ - x̂ₖ|ₖ₋₁)<br/>4. Covariance: Pₖ|ₖ = (1 - Kₖ)Pₖ|ₖ₋₁"]
+    end
 
-kalman_stage: 1D Discrete-Time Linear Kalman Filter {
-  style.fill: "#ede9fe"
-  style.stroke: "#7c3aed"
+    RAW -->|"Noisy ADC sample"| KALMAN
 
-  pred: "1. Predict: x_hat_k|k-1 = x_hat_k-1|k-1, P_k|k-1 = P_k-1 + Q"
-  gain: "2. Gain: K_k = P_k|k-1 / (P_k|k-1 + R)"
-  update: "3. Update: x_hat_k|k = x_hat_k|k-1 + K_k*(z_k - x_hat_k|k-1)"
-  cov: "4. Covariance: P_k|k = (1 - K_k)*P_k|k-1"
-}
+    subgraph ANOMALY["Stage 2: Streaming Anomaly &amp; Drift Engine"]
+        direction TB
+        A_OP["• EWMA Baseline: μₖ = μₖ₋₁ + α(xₖ - μₖ₋₁)<br/>• Surge Spike Test: |zₖ| = |xₖ - μₖ| / σₖ &gt; 3.0<br/>• Two-Sided CUSUM: Sₖ⁺ = max(0, Sₖ₋₁⁺ + eₖ - k)"]
+    end
 
-signal_in -> kalman_stage.pred: "Noisy ADC / Echo sample"
+    KALMAN -->|"Noise-Suppressed x̂"| ANOMALY
 
-anomaly_stage: Streaming Anomaly & Drift Engine {
-  style.fill: "#ede9fe"
-  style.stroke: "#7c3aed"
+    subgraph FUSION["Stage 3: Multi-Sensor Composite Hazard Fusion"]
+        direction TB
+        F_OP["• Electrocution Risk Index: min(100, V_score × Depth_factor)<br/>• Fire Combustion Index: min(100, Thermal + CO + Combustible)<br/>• Tilt Debounce: Multi-frame persistence check"]
+    end
 
-  ewma: "EWMA Baseline: mu_k = mu_k-1 + alpha*(x_k - mu_k-1)"
-  zscore: "Surge Test: |z_k| = |x_k - mu_k| / sigma_k > 3.0"
-  cusum: "CUSUM Drift: S_k^+ = max(0, S_k-1^+ + e_k - k)"
-}
+    ANOMALY -->|"Conditioned metric stream"| FUSION
 
-kalman_stage.update -> anomaly_stage.ewma: "Noise-Suppressed x_hat"
+    OUT[("<b>Enriched Telemetry Record &amp; Alert Event</b><br/>Enqueued in buffer &amp; broadcast via WebSocket")]
+    FUSION ==> OUT
 
-fusion_stage: Multi-Sensor Composite Hazard Fusion {
-  style.fill: "#fee2e2"
-  style.stroke: "#ef4444"
+    classDef default fill:#ffffff,stroke:#64748b,stroke-width:1px,color:#0f172a;
+    classDef blueprint fill:#f8fafc,stroke:#475569,stroke-width:1.5px,color:#0f172a;
+    classDef storageNode fill:#f1f5f9,stroke:#334155,stroke-width:2px,color:#0f172a;
 
-  elec: "Electrocution Risk Index: min(100, V_score * Depth_factor)"
-  fire: "Fire Combustion Index: min(100, Thermal + CO + Combustible)"
-  tilt: "Tilt Debounce: 2 consecutive displaced samples required"
-}
-
-anomaly_stage.zscore -> fusion_stage.elec: "Conditioned metric stream"
-
-alert_out: Dispatched Alert & DB Row {
-  shape: document
-  style.fill: "#dcfce7"
-  style.stroke: "#16a34a"
-}
-
-fusion_stage -> alert_out: "Enriched Telemetry"
+    class RAW,K_OP,A_OP,F_OP blueprint;
+    class OUT storageNode;
 ```
 
 ### Mathematical Formulations & Tuning:

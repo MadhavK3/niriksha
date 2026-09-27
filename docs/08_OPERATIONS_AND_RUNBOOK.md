@@ -8,83 +8,96 @@ This runbook provides complete operational procedures for configuring, launching
 
 All platform services (Python FastAPI backend, Vite React frontend, and background log tailers) are orchestrated via the native Windows PowerShell CLI script [manage.ps1](file:///d:/proj/SIH/manage.ps1).
 
-```d2
-direction: down
+```mermaid
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": "Inter, Segoe UI, -apple-system, BlinkMacSystemFont, Roboto, sans-serif",
+    "fontSize": "13px",
+    "primaryColor": "#ffffff",
+    "primaryBorderColor": "#64748b",
+    "primaryTextColor": "#0f172a",
+    "lineColor": "#475569",
+    "clusterBkg": "#f8fafc",
+    "clusterBorder": "#94a3b8"
+  },
+  "flowchart": { "curve": "basis", "htmlLabels": true, "nodeSpacing": 25, "rankSpacing": 40 }
+} }%%
+flowchart TB
+    CLI["<b>Operator Shell (PowerShell)</b><br/><code>.\\manage.ps1 [start | debug | stop | restart | status | logs]</code>"]
 
-cli: Operator Terminal (PowerShell) {
-  shape: step
-  style.fill: "#f8fafc"
-  cmd: ".\\manage.ps1 [start | debug | stop | restart | status | logs]"
-}
+    subgraph ORCHESTRATOR["PowerShell Orchestrator Engine (manage.ps1)"]
+        direction TB
+        CHECK["<b>Port &amp; PID Diagnostics</b><br/>Get-NetTCPConnection on 8000, 5173, 5432"]
+        LAUNCH["<b>Background Process Supervisor</b><br/>Start-Process python &amp; npm with log redirection"]
+        KILL["<b>Socket &amp; Process Cleanup</b><br/>Graceful termination + taskkill /PID /F on orphans"]
+        CHECK --> LAUNCH
+        CHECK --> KILL
+    end
 
-orchestrator: PowerShell Management Script (manage.ps1) {
-  style.fill: "#ffffff"
-  style.stroke: "#0284c7"
-  style.stroke-width: 2
+    CLI ==>|"Execute action"| ORCHESTRATOR
 
-  port_checker: Port & PID Health Checker {
-    shape: class
-    style.fill: "#f0f9ff"
-    action: "Get-NetTCPConnection on ports 8000, 5173"
+    subgraph SERVICES["Supervised System Daemons &amp; Ports"]
+        direction LR
+        S1["<b>FastAPI Backend Engine</b><br/>Port 8000 · logs/backend.log"]
+        S2["<b>Vite React Dev Server</b><br/>Port 5173 · logs/frontend.log"]
+        S3[("<b>PostgreSQL 14+</b><br/>Port 5432 · Time-series")]
+        S4["<b>Local Ollama LLM</b><br/>Port 11434 · Model daemon"]
+    end
+
+    LAUNCH -->|"Spawn background uvicorn"| S1
+    LAUNCH -->|"Spawn background npm"| S2
+    CHECK -.->|"Check socket"| S3
+    CHECK -.->|"Check socket"| S4
+
+    classDef default fill:#ffffff,stroke:#64748b,stroke-width:1px,color:#0f172a;
+    classDef blueprint fill:#f8fafc,stroke:#475569,stroke-width:1.5px,color:#0f172a;
+    classDef storageNode fill:#f1f5f9,stroke:#334155,stroke-width:2px,color:#0f172a;
+
+    class CLI,CHECK,LAUNCH,KILL,S1,S2,S4 blueprint;
+    class S3 storageNode;
+```
+
+```mermaid
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": "Inter, Segoe UI, sans-serif",
+    "fontSize": "13px",
+    "primaryColor": "#ffffff",
+    "primaryBorderColor": "#64748b",
+    "primaryTextColor": "#0f172a",
+    "lineColor": "#475569",
+    "actorBkg": "#f8fafc",
+    "actorBorder": "#475569",
+    "actorTextColor": "#0f172a",
+    "signalColor": "#334155",
+    "signalTextColor": "#0f172a"
   }
+} }%%
+sequenceDiagram
+    autonumber
+    actor Admin as Municipal Engineer
+    participant PS as manage.ps1
+    participant TCP as Windows TCP Stack
+    participant BE as Python FastAPI (8000)
+    participant FE as Vite React (5173)
 
-  process_launcher: Background Job Supervisor {
-    shape: step
-    style.fill: "#f0fdf4"
-    action: "Start-Process python & npm with output redirection to logs/"
-  }
+    Admin->>PS: .\manage.ps1 start
+    PS->>TCP: Check ports 8000 & 5173 (Get-NetTCPConnection)
+    TCP-->>PS: Sockets Available
+    
+    PS->>BE: Start-Process python -m uvicorn ... > logs/backend.log
+    PS->>FE: Start-Process npm run dev ... > logs/frontend.log
+    
+    loop Health Check Polling
+        PS->>TCP: Test-NetConnection -Port 8000
+        TCP-->>PS: Status = Open
+        PS->>TCP: Test-NetConnection -Port 5173
+        TCP-->>PS: Status = Open
+    end
 
-  terminator: Process Cleanup Engine {
-    shape: step
-    style.fill: "#fee2e2"
-    action: "Graceful SIGTERM -> Taskkill /PID /F on stubborn sockets"
-  }
-
-  port_checker -> process_launcher
-  port_checker -> terminator
-}
-
-cli -> orchestrator: "Executes command"
-
-services: Managed Services & Ports {
-  style.fill: "#f8fafc"
-  style.stroke: "#64748b"
-
-  be_srv: FastAPI Backend Engine {
-    shape: rectangle
-    style.fill: "#dcfce7"
-    port: "TCP 8000 (REST & /ws/telemetry)"
-    log: "logs/backend.log"
-  }
-
-  fe_srv: React Vite Dev Server {
-    shape: rectangle
-    style.fill: "#eff6ff"
-    port: "TCP 5173 (HTTP UI)"
-    log: "logs/frontend.log"
-  }
-
-  pg_srv: PostgreSQL Database {
-    shape: cylinder
-    style.fill: "#f1f5f9"
-    port: "TCP 5432 (Time-Series Tables)"
-  }
-
-  mqtt_srv: Industrial MQTT Broker {
-    shape: rectangle
-    style.fill: "#fef3c7"
-    port: "TCP 1883 (Telemetry Topics)"
-  }
-
-  ollama_srv: Ollama Local LLM {
-    shape: rectangle
-    style.fill: "#ccfbf1"
-    port: "TCP 11434 (Inference REST)"
-  }
-
-  orchestrator.process_launcher -> be_srv: "Spawns uvicorn"
-  orchestrator.process_launcher -> fe_srv: "Spawns npm run dev"
-}
+    PS-->>Admin: Services running successfully [BE: 8000, FE: 5173]
 ```
 
 ---

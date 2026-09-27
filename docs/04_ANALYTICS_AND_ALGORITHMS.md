@@ -11,46 +11,96 @@ NIRIKSHA routes all normalized telemetry through an in-memory algorithmic proces
 
 ## 1. Algorithmic Pipeline Architecture
 
-```d2
-direction: right
+```mermaid
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": "Inter, Segoe UI, -apple-system, BlinkMacSystemFont, Roboto, sans-serif",
+    "fontSize": "13px",
+    "primaryColor": "#ffffff",
+    "primaryBorderColor": "#64748b",
+    "primaryTextColor": "#0f172a",
+    "lineColor": "#475569",
+    "clusterBkg": "#f8fafc",
+    "clusterBorder": "#94a3b8"
+  },
+  "flowchart": { "curve": "basis", "htmlLabels": true, "nodeSpacing": 25, "rankSpacing": 40 }
+} }%%
+flowchart LR
+    RAW["<b>Raw Normalized Packet</b><br/><code>normalizer.py</code><br/>Noisy ADC, Ultrasonic, Gas"]
 
-raw_in: Normalized Telemetry Packet {
-  shape: document
-  style.fill: "#f8fafc"
-}
+    subgraph STAGE1["Stage 1: 1D Kalman Filter Bank (kalman.py)"]
+        direction TB
+        K1["<b>Recursive State Estimator</b><br/>• Time Update: x̂⁻ = x̂, P⁻ = P + Q<br/>• Measurement Update: K = P⁻ / (P⁻ + R)<br/>• x̂ = x̂⁻ + K(z - x̂⁻), P = (1 - K)P⁻<br/>• Channels: Depth, Gas ADCs, ZMPT101B"]
+    end
 
-stage1: Stage 1: 1D Kalman Filter Bank (kalman.py) {
-  shape: step
-  style.fill: "#ede9fe"
-  style.stroke: "#7c3aed"
-  desc: "Minimizes Mean Squared Error\nPer-channel tuned Q and R covariances"
-}
+    subgraph STAGE2["Stage 2: Streaming Anomaly Bank (anomaly.py)"]
+        direction TB
+        A1["<b>Statistical Drift &amp; Spike Flagging</b><br/>• EWMA Mean: μₜ = α xₜ + (1 - α) μₜ₋₁<br/>• Streaming Variance (Welford adaptation)<br/>• Dynamic Z-Score Spike: |z| = |x - μ| / σ &gt; 3.0<br/>• Two-Sided CUSUM: Slow toxic drift detection"]
+    end
 
-stage2: Stage 2: Streaming Anomaly Bank (anomaly.py) {
-  shape: step
-  style.fill: "#ede9fe"
-  style.stroke: "#7c3aed"
-  desc: "EWMA Mean & Variance (Welford adaptation)\nZ-Score Surge Flagging (|z| > 3.0)\nTwo-Sided CUSUM Slow Drift Accumulator"
-}
+    subgraph STAGE3["Stage 3: Hazard Fusion Engine (fusion_engine.py)"]
+        direction TB
+        F1["<b>Multi-Sensor Cross Fusion</b><br/>• <b>Electrocution Risk Index:</b><br/>  f(ZMPT AC Leakage, HC-SR04 Depth)<br/>• <b>Fire &amp; Combustion Index:</b><br/>  f(Thermal Rate of Rise, MQ-7, MQ-2)<br/>• <b>Tilt Debounce:</b> Multi-frame persistence"]
+    end
 
-stage3: Stage 3: Multi-Sensor Hazard Fusion (fusion_engine.py) {
-  shape: step
-  style.fill: "#fee2e2"
-  style.stroke: "#ef4444"
-  desc: "Electrocution Risk Index (Voltage x Water Depth)\nFire & Combustion Index (Temp + MQ-7 + MQ-2)\nTilt Debounce Verification"
-}
+    ENRICHED[("<b>Enriched Record</b><br/>Filtered values + Risk Indices<br/>→ Buffer &amp; WebSockets")]
 
-enriched_out: Enriched Telemetry Packet {
-  shape: document
-  style.fill: "#dcfce7"
-  style.stroke: "#16a34a"
-  payload: "Filtered Sensors + Composite Indices + Alert Objects"
-}
+    RAW -->|"Raw Floats"| STAGE1
+    STAGE1 -->|"Noise-Suppressed Stream"| STAGE2
+    STAGE2 -->|"Z-Scores &amp; Drift Metric"| STAGE3
+    STAGE3 -->|"Composite Alerts &amp; Telemetry"| ENRICHED
 
-raw_in -> stage1: "Raw Floats"
-stage1 -> stage2: "Noise-Suppressed Stream"
-stage2 -> stage3: "Z-Scores & Drift Indicators"
-stage3 -> enriched_out: "To Batch Buffer & WebSockets"
+    classDef default fill:#ffffff,stroke:#64748b,stroke-width:1px,color:#0f172a;
+    classDef blueprint fill:#f8fafc,stroke:#475569,stroke-width:1.5px,color:#0f172a;
+    classDef storageNode fill:#f1f5f9,stroke:#334155,stroke-width:2px,color:#0f172a;
+
+    class RAW,K1,A1,F1 blueprint;
+    class ENRICHED storageNode;
+```
+
+```mermaid
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": "Inter, Segoe UI, sans-serif",
+    "fontSize": "13px",
+    "primaryColor": "#ffffff",
+    "primaryBorderColor": "#64748b",
+    "primaryTextColor": "#0f172a",
+    "lineColor": "#475569"
+  }
+} }%%
+stateDiagram-v2
+    [*] --> BaselineTracking: Normal Operating Conditions
+    
+    state BaselineTracking {
+        [*] --> UpdateEWMA: Compute Running μ & σ
+        UpdateEWMA --> AccumulateCUSUM: S⁺ = max(0, S⁺ + z - k)
+        AccumulateCUSUM --> [*]
+    }
+
+    BaselineTracking --> SurgeSuspected: Streaming |z| > 3.0
+    BaselineTracking --> DriftSuspected: CUSUM Drift S⁺ > Threshold (h)
+
+    state AnomalyVerification {
+        SurgeSuspected --> DebounceCheck: Verify Consequent Frames
+        DriftSuspected --> DebounceCheck: Cross-Check Adjacent Poles
+        DebounceCheck --> MultiSensorCrossVerify: Correlate Second Modality
+    }
+
+    AnomalyVerification --> BaselineTracking: Transient Spike / False Positive
+    
+    AnomalyVerification --> ActiveHazardEmergency: Cross-Fusion Breach
+    
+    state ActiveHazardEmergency {
+        [*] --> SynthesizeAlert: Generate Warning Object
+        SynthesizeAlert --> AudioModalLockout: Broadcast Emergency SOS
+        AudioModalLockout --> OperatorAction: Await Municipal Response
+        OperatorAction --> Resolved: Incident Cleared & Acknowledged
+    }
+
+    Resolved --> BaselineTracking: Sensor Baseline Restored
 ```
 
 ---

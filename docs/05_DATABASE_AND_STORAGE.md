@@ -8,103 +8,108 @@ NIRIKSHA implements a high-throughput persistence architecture using **PostgreSQ
 
 ## 1. Storage Architecture & Batch Pipeline
 
-```d2
-direction: down
+```mermaid
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": "Inter, Segoe UI, -apple-system, BlinkMacSystemFont, Roboto, sans-serif",
+    "fontSize": "13px",
+    "primaryColor": "#ffffff",
+    "primaryBorderColor": "#64748b",
+    "primaryTextColor": "#0f172a",
+    "lineColor": "#475569",
+    "clusterBkg": "#f8fafc",
+    "clusterBorder": "#94a3b8"
+  },
+  "flowchart": { "curve": "basis", "htmlLabels": true, "nodeSpacing": 25, "rankSpacing": 40 }
+} }%%
+flowchart TB
+    INGEST["<b>Incoming Ingest Stream</b><br/>Enriched packets from fusion pipeline"]
 
-ingest_stream: Incoming Ingested Packets {
-  shape: document
-  style.fill: "#eff6ff"
-}
+    subgraph BUFFER["Decoupled Memory Batch Ring Buffer (buffer.py)"]
+        direction TB
+        QUEUE["<b>In-Memory Record Queue</b><br/>Thread-safe asyncio list appending normalized tuples"]
+        EVAL{"<b>Flush Rule Evaluator</b><br/>• Count &gt;= 50 records?<br/>• OR Elapsed &gt;= 300 ms?"}
+        QUEUE --> EVAL
+    end
 
-buffer_subsystem: Memory Batch Ring Buffer (app/db/buffer.py) {
-  style.fill: "#ffffff"
-  style.stroke: "#ca8a04"
-  style.stroke-width: 2
+    INGEST -->|"Append normalized tuple"| QUEUE
 
-  queue: In-Memory Record List {
-    shape: queue
-    style.fill: "#fef9c3"
-    desc: "Thread-safe asyncio list appending normalized tuples"
+    subgraph POOL["asyncpg Connection Pool (connection.py)"]
+        direction TB
+        MGR["<b>Pool Manager</b><br/>min_size=2, max_size=10, timeout=10s"]
+        CONN["<b>Acquired Worker Connection</b><br/><code>async with pool.acquire() as conn:</code><br/><code>async with conn.transaction():</code><br/><code>await conn.executemany(...)</code>"]
+        MGR -->|"Lease connection"| CONN
+    end
+
+    EVAL -->|"Trigger multi-row flush"| CONN
+
+    subgraph POSTGRES["PostgreSQL 14+ Relational Storage"]
+        direction LR
+        T1[("<b>Table: telemetry</b><br/>BIGSERIAL id, seq, timestamp<br/>pole_id, depth, voltage, current<br/>power, energy, mq gases, sensors_json")]
+        T2[("<b>Table: alerts</b><br/>BIGSERIAL id, pole_id, alert_type<br/>severity, trigger_value, status<br/>triggered_at, resolved_at")]
+    end
+
+    CONN ==>|"Binary batch insert"| T1
+    CONN -.->|"Incident logging"| T2
+
+    classDef default fill:#ffffff,stroke:#64748b,stroke-width:1px,color:#0f172a;
+    classDef blueprint fill:#f8fafc,stroke:#475569,stroke-width:1.5px,color:#0f172a;
+    classDef storageNode fill:#f1f5f9,stroke:#334155,stroke-width:2px,color:#0f172a;
+
+    class INGEST,QUEUE,MGR,CONN blueprint;
+    class T1,T2 storageNode;
+```
+
+```mermaid
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": "Inter, Segoe UI, sans-serif",
+    "fontSize": "13px",
+    "primaryColor": "#ffffff",
+    "primaryBorderColor": "#64748b",
+    "primaryTextColor": "#0f172a",
+    "lineColor": "#475569",
+    "actorBkg": "#f8fafc",
+    "actorBorder": "#475569",
+    "actorTextColor": "#0f172a",
+    "signalColor": "#334155",
+    "signalTextColor": "#0f172a"
   }
+} }%%
+sequenceDiagram
+    autonumber
+    participant Ingest as Pipeline Ingest
+    participant Buffer as Batch Ring Buffer (buffer.py)
+    participant Pool as asyncpg.Pool
+    participant Conn as Leased DB Connection
+    participant PG as PostgreSQL 14+
 
-  flush_eval: Flush Condition Evaluator {
-    shape: diamond
-    style.fill: "#fef3c7"
-    rule: "len >= 50 OR (now - last_flush) >= 300ms"
-  }
+    loop Continuous Ingestion
+        Ingest->>Buffer: append(telemetry_tuple)
+        Note over Buffer: Queue size increments (e.g. 1..49)
+    end
 
-  queue -> flush_eval: "Trigger check"
-}
+    alt Trigger Condition 1: Size Reaches 50 Records
+        Note over Buffer: len(queue) >= 50
+    else Trigger Condition 2: Timer Reaches 300 ms
+        Note over Buffer: (now - last_flush) >= 0.3s
+    end
 
-ingest_stream -> buffer_subsystem.queue: "Append tuple"
+    Buffer->>Buffer: Atomically slice batch & reset timer
+    Buffer->>Pool: pool.acquire()
+    Pool-->>Conn: Yield active connection
+    
+    rect rgb(248, 250, 252)
+        Note over Conn,PG: Transaction Boundary
+        Conn->>PG: BEGIN
+        Conn->>PG: conn.executemany("INSERT INTO telemetry ...", batch_slice)
+        Conn->>PG: COMMIT
+    end
 
-pool_subsystem: asyncpg Connection Pool (app/db/connection.py) {
-  style.fill: "#f8fafc"
-  style.stroke: "#16a34a"
-  style.stroke-width: 2
-
-  pool_mgmt: asyncpg.Pool Manager {
-    shape: step
-    style.fill: "#dcfce7"
-    params: "min_size = 2, max_size = 10, timeout = 10s"
-  }
-
-  worker_conn: Acquired Worker Connection {
-    shape: rectangle
-    style.fill: "#f0fdf4"
-    action: "async with pool.acquire() as conn:\n    async with conn.transaction():\n        await conn.executemany(...)"
-  }
-
-  pool_mgmt -> worker_conn: "Lease connection"
-}
-
-buffer_subsystem.flush_eval -> pool_subsystem.worker_conn: "Batch Slice (Up to 50 records)" {
-  style.stroke: "#16a34a"
-  style.stroke-width: 2
-}
-
-db_tables: PostgreSQL Relational Database {
-  style.fill: "#ffffff"
-  style.stroke: "#334155"
-
-  telemetry_table: Table: telemetry {
-    shape: table
-    id: "BIGSERIAL PRIMARY KEY"
-    seq: "BIGINT"
-    timestamp: "DOUBLE PRECISION"
-    pole_id: "INT"
-    mesh_node_id: "BIGINT"
-    water_depth: "DOUBLE PRECISION"
-    voltage: "DOUBLE PRECISION"
-    current_ma: "DOUBLE PRECISION"
-    power: "DOUBLE PRECISION"
-    energy: "DOUBLE PRECISION"
-    frequency: "DOUBLE PRECISION"
-    pf: "DOUBLE PRECISION"
-    mq7: "DOUBLE PRECISION"
-    mq135: "DOUBLE PRECISION"
-    mq136: "DOUBLE PRECISION"
-    mq2: "DOUBLE PRECISION"
-    sensors_json: "JSONB"
-    created_at: "TIMESTAMPTZ DEFAULT NOW()"
-  }
-
-  alerts_table: Table: alerts {
-    shape: table
-    id: "BIGSERIAL PRIMARY KEY"
-    pole_id: "INT"
-    alert_type: "VARCHAR(64)"
-    severity: "VARCHAR(32)"
-    title: "TEXT"
-    description: "TEXT"
-    trigger_value: "DOUBLE PRECISION"
-    status: "VARCHAR(32) DEFAULT 'UNRESOLVED'"
-    triggered_at: "TIMESTAMPTZ DEFAULT NOW()"
-    resolved_at: "TIMESTAMPTZ"
-  }
-}
-
-pool_subsystem.worker_conn -> db_tables.telemetry_table: "Multi-row INSERT batch"
+    Conn-->>Pool: Release connection back to pool
+    Note over Buffer: In-memory memory stays minimal and constant
 ```
 
 ---

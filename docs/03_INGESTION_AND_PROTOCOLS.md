@@ -8,85 +8,101 @@ NIRIKSHA ingests live field telemetry through two concurrent real-world communic
 
 The ingestion layer runs within the FastAPI process lifespan, decoupling physical hardware I/O from the asynchronous event loop and database write buffer.
 
-```d2
-direction: right
+```mermaid
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": "Inter, Segoe UI, -apple-system, BlinkMacSystemFont, Roboto, sans-serif",
+    "fontSize": "13px",
+    "primaryColor": "#ffffff",
+    "primaryBorderColor": "#64748b",
+    "primaryTextColor": "#0f172a",
+    "lineColor": "#475569",
+    "clusterBkg": "#f8fafc",
+    "clusterBorder": "#94a3b8"
+  },
+  "flowchart": { "curve": "basis", "htmlLabels": true, "nodeSpacing": 30, "rankSpacing": 45 }
+} }%%
+flowchart LR
+    subgraph SOURCES["Field Telemetry Interfaces"]
+        direction TB
+        USB["<b>Physical USB UART Sink</b><br/>COM port /dev/ttyUSB0<br/>115200 Baud · 8-N-1<br/><code>MESH_JSON:{...}\n</code>"]
+        BROKER["<b>Industrial MQTT Broker</b><br/>TCP Port 1883<br/>Topic: niriksha/poles/+/telemetry<br/>QoS 1 (At Least Once)"]
+    end
 
-protocols: Ingestion Interfaces {
-  style.fill: "#f8fafc"
-  style.stroke: "#94a3b8"
+    subgraph WORKERS["Concurrency & Ingestion Engine (FastAPI Lifespan)"]
+        direction TB
+        SER_TH["<b>PySerial Daemon Worker</b><br/><code>serial_manager.py</code><br/>• Blocking readline in OS daemon thread<br/>• Auto-scans COM ports via list_ports<br/>• Catches SerialException with 2s backoff"]
+        
+        MQTT_CO["<b>Async MQTT Client Task</b><br/><code>mqtt_manager.py</code> (aiomqtt)<br/>• Non-blocking asyncio event loop consumer<br/>• Auto-reconnect loop on network loss<br/>• Handles edge cellular &amp; ethernet backhaul"]
+    end
 
-  usb_sink: Physical USB Serial (COM Port) {
-    shape: rectangle
-    style.fill: "#fef3c7"
-    style.stroke: "#d97706"
-    rate: "115200 Baud / 8-N-1"
-    frame: "MESH_JSON:{...}\n"
+    USB ==>|"Raw Byte Stream"| SER_TH
+    BROKER ==>|"Async MQTT Messages"| MQTT_CO
+
+    subgraph PIPELINE["Packet Normalization & Event Loop Handoff"]
+        direction TB
+        NORM["<b>Unified Packet Normalizer</b><br/><code>normalizer.py</code><br/>1. Strips 'MESH_JSON:' frame prefix<br/>2. Inactive sensors mapped to null / NOT_CONNECTED<br/>3. Synthesizes canonical timestamp &amp; seq index"]
+        DISPATCH["<b>Asyncio Event Loop Dispatch</b><br/><code>asyncio.run_coroutine_threadsafe</code><br/>Direct pipe to Kalman &amp; Anomaly Pipeline"]
+        NORM --> DISPATCH
+    end
+
+    SER_TH -->|"Decoded text lines"| NORM
+    MQTT_CO -->|"JSON payload string"| NORM
+
+    classDef default fill:#ffffff,stroke:#64748b,stroke-width:1px,color:#0f172a;
+    classDef blueprint fill:#f8fafc,stroke:#475569,stroke-width:1.5px,color:#0f172a;
+
+    class USB,BROKER,SER_TH,MQTT_CO,NORM,DISPATCH blueprint;
+```
+
+```mermaid
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": "Inter, Segoe UI, sans-serif",
+    "fontSize": "13px",
+    "primaryColor": "#ffffff",
+    "primaryBorderColor": "#64748b",
+    "primaryTextColor": "#0f172a",
+    "lineColor": "#475569",
+    "actorBkg": "#f8fafc",
+    "actorBorder": "#475569",
+    "actorTextColor": "#0f172a",
+    "signalColor": "#334155",
+    "signalTextColor": "#0f172a"
   }
+} }%%
+sequenceDiagram
+    autonumber
+    participant HW as Gateway USB Hardware
+    participant TH as SerialManager (Worker Thread)
+    participant OS as OS Device Tree (list_ports)
+    participant NORM as normalizer.py
+    participant LOOP as FastAPI asyncio Loop
 
-  mqtt_sink: Industrial MQTT Broker (TCP 1883) {
-    shape: rectangle
-    style.fill: "#eff6ff"
-    style.stroke: "#2563eb"
-    topics: "niriksha/poles/+/telemetry"
-    qos: "QoS 1 (At Least Once)"
-  }
-}
+    HW->>TH: Continuous UART byte stream
+    TH->>NORM: Strip 'MESH_JSON:' & parse JSON
+    NORM->>LOOP: asyncio.run_coroutine_threadsafe(packet)
 
-workers: Concurrency & Worker Threads {
-  style.fill: "#ffffff"
-  style.stroke: "#64748b"
+    Note over HW,TH: Event: Physical USB cable detached / ESD shock
+    HW--xTH: Disconnect / I/O Loss
+    TH->>TH: Catch serial.SerialException & close handle
+    Note over TH: FastAPI server & WebSockets unaffected
 
-  serial_thread: PySerial Dedicated Daemon Thread {
-    shape: step
-    style.fill: "#fef3c7"
-    style.stroke: "#d97706"
-    sub_features: Features {
-      shape: table
-      "I/O Model": "Blocking readline with timeout=1.0s"
-      "Resilience": "Catches SerialException; 2s backoff loop"
-      "Discovery": "Auto-scans COM ports using list_ports"
-    }
-  }
+    loop Auto-Reconnect Retry (every 2.0s)
+        TH->>OS: Scan COM ports via comports()
+        alt Target Gateway Found
+            OS-->>TH: Return active COM port (e.g. COM4)
+            TH->>HW: serial.Serial(port, 115200, timeout=1.0)
+            Note over TH: Port re-opened successfully
+        else Port Not Ready
+            TH->>TH: time.sleep(2.0)
+        end
+    end
 
-  mqtt_coroutine: aiomqtt Async Client Task {
-    shape: step
-    style.fill: "#eff6ff"
-    style.stroke: "#2563eb"
-    sub_features: Features {
-      shape: table
-      "I/O Model": "Non-blocking async loop iterator"
-      "Resilience": "Automatic backoff reconnection loop"
-      "Backhaul": "Cellular, Ethernet, or Edge Broker"
-    }
-  }
-
-  usb_sink -> serial_thread: "Byte Stream"
-  mqtt_sink -> mqtt_coroutine: "MQTT Message"
-}
-
-pipeline: Normalization & Processing {
-  style.fill: "#f1f5f9"
-  style.stroke: "#475569"
-
-  normalizer: Unified Packet Normalizer (normalizer.py) {
-    shape: class
-    style.fill: "#e0e7ff"
-    style.stroke: "#4f46e5"
-    rules: "1. Strips 'MESH_JSON:'\n2. Parses JSON dictionary\n3. Maps inactive sensors to NOT_CONNECTED / null\n4. Synthesizes canonical timestamp & sequence"
-  }
-
-  serial_thread -> normalizer: "Raw text lines"
-  mqtt_coroutine -> normalizer: "Decoded JSON payload"
-
-  dispatch: Async Dispatcher {
-    shape: step
-    style.fill: "#dcfce7"
-    style.stroke: "#16a34a"
-    action: "asyncio.run_coroutine_threadsafe -> Algorithmic Pipeline"
-  }
-
-  normalizer -> dispatch: "Canonical Unified Packet"
-}
+    HW->>TH: Resume continuous stream
+    TH->>NORM: Dispatch resumed telemetry
 ```
 
 ---

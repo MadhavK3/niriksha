@@ -8,72 +8,105 @@ NIRIKSHA incorporates an **offline machine reasoning engine** designed to assist
 
 The diagnostic engine is organized into a complementary two-tier pipeline: a deterministic rule engine operating at sub-millisecond speeds, backed by an on-premises local Large Language Model (LLM) managed via **Ollama**.
 
-```d2
-direction: right
+```mermaid
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": "Inter, Segoe UI, -apple-system, BlinkMacSystemFont, Roboto, sans-serif",
+    "fontSize": "13px",
+    "primaryColor": "#ffffff",
+    "primaryBorderColor": "#64748b",
+    "primaryTextColor": "#0f172a",
+    "lineColor": "#475569",
+    "clusterBkg": "#f8fafc",
+    "clusterBorder": "#94a3b8"
+  },
+  "flowchart": { "curve": "basis", "htmlLabels": true, "nodeSpacing": 25, "rankSpacing": 40 }
+} }%%
+flowchart LR
+    REQ["<b>Operator Diagnostic Query</b><br/>Chat drawer prompt or automated trigger"]
 
-request: Operator Diagnostic Query {
-  shape: document
-  style.fill: "#eff6ff"
-}
+    subgraph AI_SUBSYSTEM["Offline AI Machine Reasoning Engine"]
+        direction TB
+        
+        subgraph TIER1["Tier 1: Deterministic Safety Rules (diagnostics.py)"]
+            R1["<b>0ms Heuristic Evaluator</b><br/>• 100% deterministic safety rules<br/>• Evaluates Voltage, Depth, MQ Gas, Tilt<br/>• Immediate fallback without hallucinations"]
+        end
 
-ai_subsystem: Offline AI Diagnostic Subsystem {
-  style.fill: "#ffffff"
-  style.stroke: "#0d9488"
-  style.stroke-width: 2
+        subgraph INJECTOR["Dynamic Mesh Context Builder"]
+            INJ["<b>Prompt Context Assembler</b><br/>• Extracts latest sensor state across all poles<br/>• Formats JSON into <code>ollama_system_prompt.md</code>"]
+        end
 
-  tier1: Tier 1: Deterministic Rule Heuristics (diagnostics.py) {
-    shape: step
-    style.fill: "#f0fdf4"
-    style.stroke: "#16a34a"
-    sub_features: Specs {
-      shape: table
-      "Latency": "< 1 ms (Instantaneous)"
-      "Reliability": "100% Deterministic Safety Evaluation"
-      "Rules": "Voltage leaks, submersion, fire indices, tilt collapse"
-    }
+        subgraph TIER2["Tier 2: Local LLM Runtime (ollama.py)"]
+            OLL["<b>Local Ollama Daemon (Port 11434)</b><br/>• Models: Qwen 2.5 (0.5B/1.5B) or Llama 3.2 (1B)<br/>• 100% Air-Gapped · Zero outbound tokens<br/>• Streaming Markdown response generator"]
+        end
+
+        CB{"<b>Circuit Breaker</b><br/>Ollama healthy &amp; response &lt; 5s?"}
+
+        R1 --> INJ
+        INJ --> CB
+        CB -->|"Healthy"| OLL
+        CB -.->|"Timeout / Offline"| R1
+    end
+
+    REQ --> TIER1
+
+    RESP["<b>Markdown Diagnostic Report</b><br/>Rendered in AI Drawer / Modal"]
+    OLL -->|"Natural Language Synthesis"| RESP
+    R1 -.->|"Deterministic Safety Fallback"| RESP
+
+    classDef default fill:#ffffff,stroke:#64748b,stroke-width:1px,color:#0f172a;
+    classDef blueprint fill:#f8fafc,stroke:#475569,stroke-width:1.5px,color:#0f172a;
+
+    class REQ,R1,INJ,OLL,RESP blueprint;
+```
+
+```mermaid
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": "Inter, Segoe UI, sans-serif",
+    "fontSize": "13px",
+    "primaryColor": "#ffffff",
+    "primaryBorderColor": "#64748b",
+    "primaryTextColor": "#0f172a",
+    "lineColor": "#475569",
+    "actorBkg": "#f8fafc",
+    "actorBorder": "#475569",
+    "actorTextColor": "#0f172a",
+    "signalColor": "#334155",
+    "signalTextColor": "#0f172a"
   }
+} }%%
+sequenceDiagram
+    autonumber
+    actor Op as Municipal Operator
+    participant UI as React AI Drawer
+    participant Router as /api/ai Router
+    participant Diag as Rule Heuristics (Tier 1)
+    participant Ollama as Local Ollama LLM (Tier 2)
 
-  context_builder: Dynamic Telemetry Injector {
-    shape: class
-    style.fill: "#ede9fe"
-    style.stroke: "#7c3aed"
-    action: "Extracts latest snapshot of all poles\nInjects into ollama_system_prompt.md"
-  }
-
-  tier2: Tier 2: Local Ollama LLM Inference (ollama.py) {
-    shape: step
-    style.fill: "#ccfbf1"
-    style.stroke: "#0d9488"
-    sub_features: Specs {
-      shape: table
-      "Runtime": "Local Ollama Daemon (localhost:11434)"
-      "Models": "Qwen 2.5 (0.5B / 1.5B) or Llama 3.2 (1B)"
-      "Privacy": "Air-Gapped (Zero outbound WAN tokens)"
-    }
-  }
-
-  circuit_breaker: Circuit Breaker & Fallback {
-    shape: diamond
-    style.fill: "#fef3c7"
-    style.stroke: "#d97706"
-    test: "Is Ollama responding within 5s?"
-  }
-
-  tier1 -> context_builder: "Structured Health Summary"
-  context_builder -> circuit_breaker: "Prompt + Live Telemetry"
-  circuit_breaker -> tier2: "Active (Route to Ollama)"
-  circuit_breaker -> tier1: "Offline Fallback (Return Rule Report)"
-}
-
-request -> ai_subsystem.tier1: "Chat prompt / Trigger"
-
-response: Markdown Diagnostic Response {
-  shape: document
-  style.fill: "#f8fafc"
-}
-
-ai_subsystem.tier2 -> response: "Natural Language Reasoning"
-ai_subsystem.tier1 -> response: "Deterministic Safety Matrix"
+    Op->>UI: Submit inquiry ("Assess electrocution hazard near Pole 1")
+    UI->>Router: POST /api/ai/chat { message, sessionId }
+    
+    Router->>Diag: evaluate_active_hazards()
+    Diag-->>Router: Deterministic safety matrix (Voltage: 42V, Depth: 18cm)
+    
+    Note over Router: Build prompt: system prompt + live telemetry JSON + matrix
+    
+    Router->>Ollama: POST http://localhost:11434/api/generate (stream=true)
+    
+    alt Ollama Active & Generates Tokens
+        loop Stream Token Chunks
+            Ollama-->>Router: Token stream chunk
+            Router-->>UI: Server-Sent Events / Chunked read
+            UI-->>Op: Progressive Markdown rendering
+        end
+    else Ollama Daemon Offline or Timeout > 5.0s
+        Router->>Router: Trip Circuit Breaker
+        Router-->>UI: Return Deterministic Rule Matrix directly
+        UI-->>Op: Display Safety Checklist & Root-Cause Actions
+    end
 ```
 
 ---
