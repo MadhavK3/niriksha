@@ -51,9 +51,13 @@ flowchart LR
     MQTT_CO -->|"JSON payload string"| NORM
 
     classDef default fill:#ffffff,stroke:#64748b,stroke-width:1px,color:#0f172a;
-    classDef blueprint fill:#f8fafc,stroke:#475569,stroke-width:1.5px,color:#0f172a;
+    classDef nodeSource fill:#fef3c7,stroke:#d97706,stroke-width:1.5px,color:#78350f;
+    classDef nodeWorker fill:#eff6ff,stroke:#2563eb,stroke-width:1.5px,color:#1e3a5f;
+    classDef nodePipe fill:#f0fdf4,stroke:#16a34a,stroke-width:1.5px,color:#14532d;
 
-    class USB,BROKER,SER_TH,MQTT_CO,NORM,DISPATCH blueprint;
+    class USB,BROKER nodeSource;
+    class SER_TH,MQTT_CO nodeWorker;
+    class NORM,DISPATCH nodePipe;
 ```
 
 ```mermaid
@@ -66,43 +70,50 @@ flowchart LR
     "primaryBorderColor": "#64748b",
     "primaryTextColor": "#0f172a",
     "lineColor": "#475569",
-    "actorBkg": "#f8fafc",
-    "actorBorder": "#475569",
-    "actorTextColor": "#0f172a",
-    "signalColor": "#334155",
-    "signalTextColor": "#0f172a"
-  }
+    "clusterBkg": "#f8fafc",
+    "clusterBorder": "#94a3b8"
+  },
+  "flowchart": { "curve": "basis", "htmlLabels": true, "nodeSpacing": 25, "rankSpacing": 40 }
 } }%%
-sequenceDiagram
-    autonumber
-    participant HW as Gateway USB Hardware
-    participant TH as SerialManager (Worker Thread)
-    participant OS as OS Device Tree (list_ports)
-    participant NORM as normalizer.py
-    participant LOOP as FastAPI asyncio Loop
-
-    HW->>TH: Continuous UART byte stream
-    TH->>NORM: Strip 'MESH_JSON:' & parse JSON
-    NORM->>LOOP: asyncio.run_coroutine_threadsafe(packet)
-
-    Note over HW,TH: Event: Physical USB cable detached / ESD shock
-    HW--xTH: Disconnect / I/O Loss
-    TH->>TH: Catch serial.SerialException & close handle
-    Note over TH: FastAPI server & WebSockets unaffected
-
-    loop Auto-Reconnect Retry (every 2.0s)
-        TH->>OS: Scan COM ports via comports()
-        alt Target Gateway Found
-            OS-->>TH: Return active COM port (e.g. COM4)
-            TH->>HW: serial.Serial(port, 115200, timeout=1.0)
-            Note over TH: Port re-opened successfully
-        else Port Not Ready
-            TH->>TH: time.sleep(2.0)
-        end
+flowchart TB
+    subgraph INGEST_NOMINAL["Normal UART Streaming Pipeline"]
+        direction TB
+        N1["<b>Physical COM Port Read</b><br/>Continuous blocking readline via daemon thread"]
+        N2["<b>Frame Extraction &amp; Parse</b><br/>Verify 'MESH_JSON:' prefix &amp; parse JSON payload"]
+        N3["<b>Async Event Loop Handoff</b><br/><code>asyncio.run_coroutine_threadsafe</code>"]
+        N1 --> N2 --> N3
     end
 
-    HW->>TH: Resume continuous stream
-    TH->>NORM: Dispatch resumed telemetry
+    subgraph FAULT_INTERCEPT["Serial Disconnection &amp; Exception Handling"]
+        direction TB
+        D1["<b>Hardware Disconnection Event</b><br/>USB cable detached or ESD bus reset"]
+        D2["<b>Trap SerialException &amp; OSError</b><br/>Catch error gracefully; close dead serial handle"]
+        D1 --> D2
+    end
+
+    INGEST_NOMINAL -.->|"I/O failure detected"| FAULT_INTERCEPT
+
+    subgraph RETRY_LOOP["Auto-Discovery Reconnection Loop (2.0s Interval)"]
+        direction TB
+        R1["<b>Scan System COM Ports</b><br/>Invoke <code>serial.tools.list_ports.comports()</code>"]
+        R2["<b>Evaluate Available Hardware</b><br/>Check VID/PID or match configured COM port"]
+        R3["<b>Re-Instantiate Serial Object</b><br/><code>serial.Serial(port, 115200, timeout=1.0)</code>"]
+        R1 --> R2 --> R3
+    end
+
+    FAULT_INTERCEPT ==>|"Enter backoff"| RETRY_LOOP
+    RETRY_LOOP -->|"Connection re-established"| INGEST_NOMINAL
+
+    classDef default fill:#ffffff,stroke:#64748b,stroke-width:1px,color:#0f172a;
+    classDef healthy fill:#f0fdf4,stroke:#16a34a,stroke-width:1.5px,color:#166534;
+    classDef failure fill:#fef2f2,stroke:#ef4444,stroke-width:1.5px,color:#991b1b;
+    classDef warning fill:#fef3c7,stroke:#d97706,stroke-width:1.5px,color:#92400e;
+    classDef active fill:#eff6ff,stroke:#2563eb,stroke-width:1.5px,color:#1e3a5f;
+
+    class N1,N2,N3 healthy;
+    class D1 failure;
+    class D2 warning;
+    class R1,R2,R3 active;
 ```
 
 ---

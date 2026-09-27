@@ -52,11 +52,17 @@ flowchart LR
     STAGE3 -->|"Composite Alerts &amp; Telemetry"| ENRICHED
 
     classDef default fill:#ffffff,stroke:#64748b,stroke-width:1px,color:#0f172a;
-    classDef blueprint fill:#f8fafc,stroke:#475569,stroke-width:1.5px,color:#0f172a;
-    classDef storageNode fill:#f1f5f9,stroke:#334155,stroke-width:2px,color:#0f172a;
+    classDef nodeRaw fill:#f8fafc,stroke:#475569,stroke-width:1.5px,color:#0f172a;
+    classDef nodeKalman fill:#ede9fe,stroke:#7c3aed,stroke-width:1.5px,color:#4c1d95;
+    classDef nodeAnomaly fill:#eff6ff,stroke:#2563eb,stroke-width:1.5px,color:#1e3a5f;
+    classDef nodeHazard fill:#fef2f2,stroke:#ef4444,stroke-width:1.5px,color:#991b1b;
+    classDef nodeEnriched fill:#f0fdf4,stroke:#16a34a,stroke-width:2px,color:#14532d;
 
-    class RAW,K1,A1,F1 blueprint;
-    class ENRICHED storageNode;
+    class RAW nodeRaw;
+    class K1 nodeKalman;
+    class A1 nodeAnomaly;
+    class F1 nodeHazard;
+    class ENRICHED nodeEnriched;
 ```
 
 ```mermaid
@@ -68,39 +74,60 @@ flowchart LR
     "primaryColor": "#ffffff",
     "primaryBorderColor": "#64748b",
     "primaryTextColor": "#0f172a",
-    "lineColor": "#475569"
-  }
+    "lineColor": "#475569",
+    "clusterBkg": "#f8fafc",
+    "clusterBorder": "#94a3b8"
+  },
+  "flowchart": { "curve": "basis", "htmlLabels": true, "nodeSpacing": 25, "rankSpacing": 40 }
 } }%%
-stateDiagram-v2
-    [*] --> BaselineTracking: Normal Operating Conditions
-    
-    state BaselineTracking {
-        [*] --> UpdateEWMA: Compute Running μ & σ
-        UpdateEWMA --> AccumulateCUSUM: S⁺ = max(0, S⁺ + z - k)
-        AccumulateCUSUM --> [*]
-    }
+flowchart TB
+    subgraph BASELINE_DOMAIN["Dynamic Baseline Tracking"]
+        direction TB
+        B1["<b>Streaming EWMA Mean &amp; Variance</b><br/>Continuous recursive estimation (μₜ, σₜ)"]
+        B2["<b>Two-Sided CUSUM Accumulator</b><br/>Sₜ⁺ = max(0, Sₜ₋₁⁺ + zₜ - k)"]
+        B1 --> B2
+    end
 
-    BaselineTracking --> SurgeSuspected: Streaming |z| > 3.0
-    BaselineTracking --> DriftSuspected: CUSUM Drift S⁺ > Threshold (h)
+    subgraph DETECTION_DOMAIN["Statistical Anomaly Verification"]
+        direction TB
+        D1["<b>Surge Spike Detection</b><br/>Flag when Z-score |z| &gt; 3.0σ"]
+        D2["<b>Debounce &amp; Multi-Frame Filter</b><br/>Verify persistence over consecutive packets"]
+        D1 --> D2
+    end
 
-    state AnomalyVerification {
-        SurgeSuspected --> DebounceCheck: Verify Consequent Frames
-        DriftSuspected --> DebounceCheck: Cross-Check Adjacent Poles
-        DebounceCheck --> MultiSensorCrossVerify: Correlate Second Modality
-    }
+    BASELINE_DOMAIN -->|"Threshold breach"| DETECTION_DOMAIN
 
-    AnomalyVerification --> BaselineTracking: Transient Spike / False Positive
-    
-    AnomalyVerification --> ActiveHazardEmergency: Cross-Fusion Breach
-    
-    state ActiveHazardEmergency {
-        [*] --> SynthesizeAlert: Generate Warning Object
-        SynthesizeAlert --> AudioModalLockout: Broadcast Emergency SOS
-        AudioModalLockout --> OperatorAction: Await Municipal Response
-        OperatorAction --> Resolved: Incident Cleared & Acknowledged
-    }
+    subgraph HAZARD_DOMAIN["Multi-Sensor Risk Escalation"]
+        direction TB
+        H1["<b>Cross-Sensor Correlation</b><br/>Correlate Voltage with Depth or Temp with Gas"]
+        H2["<b>Composite Index Trigger</b><br/>Electrocution Risk &gt; 60% OR Fire Index &gt; 70%"]
+        H1 --> H2
+    end
 
-    Resolved --> BaselineTracking: Sensor Baseline Restored
+    DETECTION_DOMAIN -->|"Anomaly verified"| HAZARD_DOMAIN
+    DETECTION_DOMAIN -.->|"Transient noise rejected"| BASELINE_DOMAIN
+
+    subgraph RESPONSE_DOMAIN["Safety Incident &amp; Operator Resolution"]
+        direction TB
+        E1["<b>Emergency Modal &amp; Siren SOS</b><br/>Full-screen UI lockout + 880Hz audio alert"]
+        E2["<b>Incident Table Persistence</b><br/>PostgreSQL record logged with 'UNRESOLVED' status"]
+        E3["<b>Municipal Operator Clearance</b><br/>Safety team remediation and incident resolve"]
+        E1 --> E2 --> E3
+    end
+
+    HAZARD_DOMAIN ==>|"Trigger Critical Alert"| RESPONSE_DOMAIN
+    RESPONSE_DOMAIN -->|"Baseline restored"| BASELINE_DOMAIN
+
+    classDef default fill:#ffffff,stroke:#64748b,stroke-width:1px,color:#0f172a;
+    classDef healthy fill:#f0fdf4,stroke:#16a34a,stroke-width:1.5px,color:#166534;
+    classDef active fill:#eff6ff,stroke:#2563eb,stroke-width:1.5px,color:#1e3a5f;
+    classDef warning fill:#fef3c7,stroke:#d97706,stroke-width:1.5px,color:#92400e;
+    classDef failure fill:#fef2f2,stroke:#ef4444,stroke-width:1.5px,color:#991b1b;
+
+    class B1,B2 healthy;
+    class D1,D2 warning;
+    class H1,H2,E1,E2 failure;
+    class E3 active;
 ```
 
 ---

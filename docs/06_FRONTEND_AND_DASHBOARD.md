@@ -57,9 +57,15 @@ flowchart TB
     RAF -.->|"Telemetry context"| V4
 
     classDef default fill:#ffffff,stroke:#64748b,stroke-width:1px,color:#0f172a;
-    classDef blueprint fill:#f8fafc,stroke:#475569,stroke-width:1.5px,color:#0f172a;
+    classDef nodeStream fill:#eff6ff,stroke:#2563eb,stroke-width:1.5px,color:#1e3a5f;
+    classDef nodeHook fill:#f8fafc,stroke:#475569,stroke-width:1.5px,color:#0f172a;
+    classDef nodePerf fill:#ede9fe,stroke:#7c3aed,stroke-width:1.5px,color:#4c1d95;
+    classDef nodeView fill:#f0fdf4,stroke:#16a34a,stroke-width:1.5px,color:#14532d;
 
-    class WS_SRV,WS_H,HAZ_H,AUD_H,BUFFER,RAF,V1,V2,V3,V4 blueprint;
+    class WS_SRV nodeStream;
+    class WS_H,HAZ_H,AUD_H nodeHook;
+    class BUFFER,RAF nodePerf;
+    class V1,V2,V3,V4 nodeView;
 ```
 
 ```mermaid
@@ -71,30 +77,58 @@ flowchart TB
     "primaryColor": "#ffffff",
     "primaryBorderColor": "#64748b",
     "primaryTextColor": "#0f172a",
-    "lineColor": "#475569"
-  }
+    "lineColor": "#475569",
+    "clusterBkg": "#f8fafc",
+    "clusterBorder": "#94a3b8"
+  },
+  "flowchart": { "curve": "basis", "htmlLabels": true, "nodeSpacing": 25, "rankSpacing": 40 }
 } }%%
-stateDiagram-v2
-    [*] --> NominalMonitoring: Dashboard Mounted
-    
-    state NominalMonitoring {
-        [*] --> SilentAudit: AudioContext Suspended / Idle
-        SilentAudit --> [*]
-    }
+flowchart TB
+    subgraph AUDIT_MONITOR["Passive Telemetry State"]
+        direction TB
+        M1["<b>Nominal Sensor Dashboard</b><br/>Continuous 60 FPS rAF rendering"]
+        M2["<b>AudioContext Idle</b><br/>Web Audio oscillators suspended"]
+        M1 --- M2
+    end
 
-    NominalMonitoring --> HazardIntercept: Electrocution (V>20 & Depth>10) OR Fire (>60°C)
-    
-    state HazardIntercept {
-        [*] --> LockoutModal: Render Emergency Intercept Dialog
-        LockoutModal --> ArmedAudio: User Interacted & Audio Armed
-        ArmedAudio --> DualToneOscillator: Synthesize 880Hz / 440Hz Square Wave
-    }
+    subgraph INTERCEPT_DOMAIN["Life-Safety Hazard Intercept"]
+        direction TB
+        H1["<b>Heuristic Rule Breach</b><br/>Electrocution (V &gt; 20V &amp; Depth &gt; 10cm) OR Fire &gt; 60°C"]
+        H2["<b>Full-Screen Modal Lockout</b><br/>Render critical safety intercept card"]
+        H1 --> H2
+    end
 
-    HazardIntercept --> SilencedByOperator: Operator Clicks 'Mute Siren'
-    SilencedByOperator --> HazardIntercept: New Distinct Hazard Detected
-    
-    HazardIntercept --> NominalMonitoring: Sensor Drops Below Emergency Threshold
-    SilencedByOperator --> NominalMonitoring: Incident Resolved & Cleared
+    AUDIT_MONITOR ==>|"Hazard detected"| INTERCEPT_DOMAIN
+
+    subgraph AUDIO_SYNTH["Procedural Siren Generation (Web Audio API)"]
+        direction TB
+        A1["<b>Arm AudioContext</b><br/>Check browser user gesture permission"]
+        A2["<b>Dual-Tone Oscillator Active</b><br/>Synthesize alternating 880Hz / 440Hz square wave"]
+        A1 --> A2
+    end
+
+    INTERCEPT_DOMAIN -->|"Audio armed"| AUDIO_SYNTH
+
+    subgraph OPERATOR_RESOLUTION["Operator Silence &amp; Recovery"]
+        direction TB
+        O1["<b>Operator Click Mute Siren</b><br/>Silence procedural siren audio tone"]
+        O2["<b>Clearance Verification</b><br/>Restore nominal state when readings return below threshold"]
+        O1 --> O2
+    end
+
+    AUDIO_SYNTH -->|"Operator action"| OPERATOR_RESOLUTION
+    OPERATOR_RESOLUTION -->|"Safe state restored"| AUDIT_MONITOR
+
+    classDef default fill:#ffffff,stroke:#64748b,stroke-width:1px,color:#0f172a;
+    classDef healthy fill:#f0fdf4,stroke:#16a34a,stroke-width:1.5px,color:#166534;
+    classDef failure fill:#fef2f2,stroke:#ef4444,stroke-width:1.5px,color:#991b1b;
+    classDef warning fill:#fef3c7,stroke:#d97706,stroke-width:1.5px,color:#92400e;
+    classDef active fill:#eff6ff,stroke:#2563eb,stroke-width:1.5px,color:#1e3a5f;
+
+    class M1,M2,O2 healthy;
+    class H1,H2,A2 failure;
+    class A1 warning;
+    class O1 active;
 ```
 
 ---

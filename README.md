@@ -133,62 +133,19 @@ flowchart TB
     WS ==>|"WebSocket /ws/telemetry"| SWIN
 
     classDef default fill:#ffffff,stroke:#64748b,stroke-width:1px,color:#0f172a;
-    classDef blueprint fill:#f8fafc,stroke:#475569,stroke-width:1.5px,color:#0f172a;
-    classDef storageNode fill:#f1f5f9,stroke:#334155,stroke-width:2px,color:#0f172a;
+    classDef nodeSafe fill:#f0fdf4,stroke:#16a34a,stroke-width:1.5px,color:#14532d;
+    classDef nodeIngest fill:#f8fafc,stroke:#475569,stroke-width:1.5px,color:#0f172a;
+    classDef nodeAnalytics fill:#ede9fe,stroke:#7c3aed,stroke-width:1.5px,color:#4c1d95;
+    classDef nodeHazard fill:#fef2f2,stroke:#ef4444,stroke-width:1.5px,color:#991b1b;
+    classDef nodeClient fill:#eff6ff,stroke:#2563eb,stroke-width:1.5px,color:#1e3a5f;
+    classDef nodeStorage fill:#f1f5f9,stroke:#334155,stroke-width:2px,color:#0f172a;
 
-    class P1,P2,P3,SER,MQ,NORM,KAL,ANOM,FUS,WS,AI,SWIN,RAF,UI blueprint;
-    class BUF,PG storageNode;
-```
-
-```mermaid
-%%{init: {
-  "theme": "base",
-  "themeVariables": {
-    "fontFamily": "Inter, Segoe UI, sans-serif",
-    "fontSize": "13px",
-    "primaryColor": "#ffffff",
-    "primaryBorderColor": "#64748b",
-    "primaryTextColor": "#0f172a",
-    "lineColor": "#475569",
-    "actorBkg": "#f8fafc",
-    "actorBorder": "#475569",
-    "actorTextColor": "#0f172a",
-    "signalColor": "#334155",
-    "signalTextColor": "#0f172a"
-  }
-} }%%
-sequenceDiagram
-    autonumber
-    actor Sensor as Transducers & Sensors
-    participant Node as ESP32 Mesh Node
-    participant Gateway as Root Gateway Hub (P3)
-    participant Ingest as PySerial / MQTT Worker
-    participant Pipeline as Analytics Pipeline
-    participant Fanout as Buffer & WebSockets
-    participant DB as PostgreSQL 14+
-    participant UI as React Dashboard
-
-    Sensor->>Node: Analog ADC / Pulse / Pulse Train Read
-    Note over Node: Local sample validation & JSON framing
-    Node-->>Gateway: 2.4 GHz painlessMesh RF Packet
-    Gateway->>Ingest: UART Serial (115200 baud) / MQTT QoS 1
-    Ingest->>Pipeline: Normalized Sensor Record (normalizer.py)
-    
-    rect rgb(248, 250, 252)
-        Note over Pipeline: Algorithmic conditioning
-        Pipeline->>Pipeline: 1D Kalman Filter (Noise Rejection)
-        Pipeline->>Pipeline: EWMA & CUSUM Anomaly Check
-        Pipeline->>Pipeline: Multi-Sensor Hazard Fusion Scoring
-    end
-
-    par Concurrent Fan-Out
-        Pipeline->>Fanout: Append Enriched Record to Buffer
-        Fanout->>DB: Batch Flush (every 250-300ms / 50 rows)
-    and Real-Time Client Push
-        Pipeline->>Fanout: Broadcast via WebSocket
-        Fanout->>UI: /ws/telemetry Event Push
-        UI->>UI: rAF Throttled State Update & Siren Check
-    end
+    class P1,P2,P3 nodeSafe;
+    class SER,MQ,NORM nodeIngest;
+    class KAL,ANOM nodeAnalytics;
+    class FUS nodeHazard;
+    class BUF,PG nodeStorage;
+    class WS,AI,SWIN,RAF,UI nodeClient;
 ```
 
 ### Core Subsystems

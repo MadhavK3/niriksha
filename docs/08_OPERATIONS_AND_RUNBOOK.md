@@ -51,11 +51,14 @@ flowchart TB
     CHECK -.->|"Check socket"| S4
 
     classDef default fill:#ffffff,stroke:#64748b,stroke-width:1px,color:#0f172a;
-    classDef blueprint fill:#f8fafc,stroke:#475569,stroke-width:1.5px,color:#0f172a;
-    classDef storageNode fill:#f1f5f9,stroke:#334155,stroke-width:2px,color:#0f172a;
+    classDef nodeCli fill:#f8fafc,stroke:#475569,stroke-width:1.5px,color:#0f172a;
+    classDef nodeOrch fill:#eff6ff,stroke:#2563eb,stroke-width:1.5px,color:#1e3a5f;
+    classDef nodeSrv fill:#f0fdf4,stroke:#16a34a,stroke-width:1.5px,color:#14532d;
+    classDef nodeDb fill:#f1f5f9,stroke:#334155,stroke-width:2px,color:#0f172a;
 
-    class CLI,CHECK,LAUNCH,KILL,S1,S2,S4 blueprint;
-    class S3 storageNode;
+    class CLI,CHECK,LAUNCH,KILL nodeOrch;
+    class S1,S2,S4 nodeSrv;
+    class S3 nodeDb;
 ```
 
 ```mermaid
@@ -68,36 +71,58 @@ flowchart TB
     "primaryBorderColor": "#64748b",
     "primaryTextColor": "#0f172a",
     "lineColor": "#475569",
-    "actorBkg": "#f8fafc",
-    "actorBorder": "#475569",
-    "actorTextColor": "#0f172a",
-    "signalColor": "#334155",
-    "signalTextColor": "#0f172a"
-  }
+    "clusterBkg": "#f8fafc",
+    "clusterBorder": "#94a3b8"
+  },
+  "flowchart": { "curve": "basis", "htmlLabels": true, "nodeSpacing": 25, "rankSpacing": 40 }
 } }%%
-sequenceDiagram
-    autonumber
-    actor Admin as Municipal Engineer
-    participant PS as manage.ps1
-    participant TCP as Windows TCP Stack
-    participant BE as Python FastAPI (8000)
-    participant FE as Vite React (5173)
-
-    Admin->>PS: .\manage.ps1 start
-    PS->>TCP: Check ports 8000 & 5173 (Get-NetTCPConnection)
-    TCP-->>PS: Sockets Available
-    
-    PS->>BE: Start-Process python -m uvicorn ... > logs/backend.log
-    PS->>FE: Start-Process npm run dev ... > logs/frontend.log
-    
-    loop Health Check Polling
-        PS->>TCP: Test-NetConnection -Port 8000
-        TCP-->>PS: Status = Open
-        PS->>TCP: Test-NetConnection -Port 5173
-        TCP-->>PS: Status = Open
+flowchart TB
+    subgraph CMD_DISPATCH["CLI Command Invocation"]
+        direction TB
+        C1["<b>PowerShell Terminal</b><br/><code>.\\manage.ps1 start</code> or <code>.\\manage.ps1 restart</code>"]
+        C2["<b>Environment Check</b><br/>Verify Python &gt;= 3.10 and Node.js &gt;= 18"]
+        C1 --> C2
     end
 
-    PS-->>Admin: Services running successfully [BE: 8000, FE: 5173]
+    subgraph PORT_AUDIT["Network Socket &amp; Process Inspection"]
+        direction TB
+        P1["<b>Probe Bound Ports</b><br/><code>Get-NetTCPConnection</code> on 8000, 5173"]
+        P2{"<b>Port In Use?</b><br/>Orphan process detected on socket?"}
+        P3["<b>Graceful Termination</b><br/>Taskkill /PID /F on lingering socket owner"]
+        P1 --> P2
+        P2 -->|"Yes"| P3
+    end
+
+    CMD_DISPATCH --> PORT_AUDIT
+
+    subgraph SPAWN_STAGE["Background Service Supervisor"]
+        direction TB
+        S1["<b>FastAPI Daemon</b><br/><code>Start-Process python</code> with logs/backend.log"]
+        S2["<b>Vite React Daemon</b><br/><code>Start-Process npm</code> with logs/frontend.log"]
+    end
+
+    P2 -->|"Clear"| SPAWN_STAGE
+    P3 --> SPAWN_STAGE
+
+    subgraph VERIFY_STAGE["Service Health Verification Loop"]
+        direction TB
+        V1["<b>Socket Health Handshake</b><br/>Test-NetConnection localhost:8000 &amp; 5173"]
+        V2["<b>Operational Ready State</b><br/>Display live status table to operator terminal"]
+        V1 --> V2
+    end
+
+    SPAWN_STAGE ==> VERIFY_STAGE
+
+    classDef default fill:#ffffff,stroke:#64748b,stroke-width:1px,color:#0f172a;
+    classDef healthy fill:#f0fdf4,stroke:#16a34a,stroke-width:1.5px,color:#166534;
+    classDef active fill:#eff6ff,stroke:#2563eb,stroke-width:1.5px,color:#1e3a5f;
+    classDef warning fill:#fef3c7,stroke:#d97706,stroke-width:1.5px,color:#92400e;
+    classDef failure fill:#fef2f2,stroke:#ef4444,stroke-width:1.5px,color:#991b1b;
+
+    class C1,C2,S1,S2 active;
+    P1,P2 warning;
+    class P3 failure;
+    class V1,V2 healthy;
 ```
 
 ---

@@ -49,11 +49,13 @@ flowchart TB
     P3 ==>|"USB Serial UART Bridge"| COM
 
     classDef default fill:#ffffff,stroke:#64748b,stroke-width:1px,color:#0f172a;
-    classDef nodeCard fill:#f8fafc,stroke:#475569,stroke-width:1.5px,color:#0f172a;
-    classDef hubCard fill:#f1f5f9,stroke:#334155,stroke-width:2px,color:#0f172a;
+    classDef nodeSafe fill:#f0fdf4,stroke:#16a34a,stroke-width:1.5px,color:#14532d;
+    classDef nodeHub fill:#eff6ff,stroke:#2563eb,stroke-width:2px,color:#1e3a5f;
+    classDef nodeHost fill:#f8fafc,stroke:#475569,stroke-width:1.5px,color:#0f172a;
 
-    class P1,P2 nodeCard;
-    class P3,COM hubCard;
+    class P1,P2 nodeSafe;
+    class P3 nodeHub;
+    class COM nodeHost;
 ```
 
 ```mermaid
@@ -65,39 +67,59 @@ flowchart TB
     "primaryColor": "#ffffff",
     "primaryBorderColor": "#64748b",
     "primaryTextColor": "#0f172a",
-    "lineColor": "#475569"
-  }
+    "lineColor": "#475569",
+    "clusterBkg": "#f8fafc",
+    "clusterBorder": "#94a3b8"
+  },
+  "flowchart": { "curve": "basis", "htmlLabels": true, "nodeSpacing": 25, "rankSpacing": 40 }
 } }%%
-stateDiagram-v2
-    [*] --> HardwareInit: Bootloader Execution
-    
-    state HardwareInit {
-        [*] --> CalibrateSensors: Load Baseline & Noise Cutoff
-        CalibrateSensors --> InitPins: Configure ADC1 & UARTs
-        InitPins --> [*]
-    }
+flowchart TB
+    subgraph INIT_PHASE["Station Hardware Initialization"]
+        direction TB
+        B1["<b>ESP32 Bootloader &amp; Flash</b><br/>Read calibration constants"]
+        B2["<b>Transducer Baseline Calibrations</b><br/>Zero offset ADC1 &amp; configure UART2"]
+        B1 --> B2
+    end
 
-    HardwareInit --> MeshScan: mesh.init(NIRIKSHA_MESH, Ch 6)
-    
-    state MeshScan {
-        [*] --> ChannelSearch: Scan ESP-NOW Beacons
-        ChannelSearch --> PeerConnect: Node Handshake
-        PeerConnect --> [*]
-    }
+    subgraph MESH_PHASE["painlessMesh Self-Discovery &amp; Routing"]
+        direction TB
+        M1["<b>Radio Channel Scan (Ch 6)</b><br/>ESP-NOW beacon discovery"]
+        M2["<b>Peer Handshake &amp; Sync</b><br/>Form mesh topology &amp; identify Root Sink"]
+        M1 --> M2
+    end
 
-    MeshScan --> SynchronizedCadence: Connection Established
-    
-    state SynchronizedCadence {
-        [*] --> SampleTransducers: Run ADC / Modbus Sampling
-        SampleTransducers --> ValidateRanges: Check Cutoffs & Framing
-        ValidateRanges --> StaggerDelay: Wait Node Slot (2300ms / 2500ms)
-        StaggerDelay --> BroadcastFrame: Send ESP-NOW JSON Packet
-        BroadcastFrame --> SampleTransducers
-    }
+    INIT_PHASE -->|"Hardware ready"| MESH_PHASE
 
-    SynchronizedCadence --> MeshReheal: RF Link Lost / Node Drop
-    MeshReheal --> MeshScan: Re-scan & Re-route Mesh Path
-    SynchronizedCadence --> [*]: Power Cycle / Hard Reset
+    subgraph CADENCE_PHASE["Telemetry Transmission Cadence"]
+        direction TB
+        C1["<b>Continuous Transducer Sampling</b><br/>ZMPT101B peak-to-peak &amp; Modbus registers"]
+        C2["<b>Staggered Slot Delay</b><br/>Pole 1: 2300ms · Pole 2: 2500ms"]
+        C3["<b>Broadcast JSON Frame</b><br/>painlessMesh send broadcast frame"]
+        C1 --> C2 --> C3
+    end
+
+    MESH_PHASE -->|"Connection secured"| CADENCE_PHASE
+
+    subgraph RECOVERY_PHASE["Radio Mesh Auto-Healing Domain"]
+        direction TB
+        R1["<b>RF Carrier Loss / Node Drop</b><br/>Link failure detected via CSMA/CA"]
+        R2["<b>Dynamic Topology Re-Routing</b><br/>Elect alternate hop path to Pole 3"]
+        R1 --> R2
+    end
+
+    CADENCE_PHASE -.->|"Node packet dropped"| RECOVERY_PHASE
+    RECOVERY_PHASE -->|"Route restored"| CADENCE_PHASE
+
+    classDef default fill:#ffffff,stroke:#64748b,stroke-width:1px,color:#0f172a;
+    classDef healthy fill:#f0fdf4,stroke:#16a34a,stroke-width:1.5px,color:#166534;
+    classDef active fill:#eff6ff,stroke:#2563eb,stroke-width:1.5px,color:#1e3a5f;
+    classDef warning fill:#fef3c7,stroke:#d97706,stroke-width:1.5px,color:#92400e;
+    classDef failure fill:#fef2f2,stroke:#ef4444,stroke-width:1.5px,color:#991b1b;
+
+    class B1,B2 healthy;
+    class M1,M2,C1,C2,C3 active;
+    class R1 failure;
+    class R2 warning;
 ```
 
 ---

@@ -54,11 +54,15 @@ flowchart TB
     CONN -.->|"Incident logging"| T2
 
     classDef default fill:#ffffff,stroke:#64748b,stroke-width:1px,color:#0f172a;
-    classDef blueprint fill:#f8fafc,stroke:#475569,stroke-width:1.5px,color:#0f172a;
-    classDef storageNode fill:#f1f5f9,stroke:#334155,stroke-width:2px,color:#0f172a;
+    classDef nodeIngest fill:#f8fafc,stroke:#475569,stroke-width:1.5px,color:#0f172a;
+    classDef nodeBuffer fill:#fef9c3,stroke:#ca8a04,stroke-width:1.5px,color:#713f12;
+    classDef nodePool fill:#eff6ff,stroke:#2563eb,stroke-width:1.5px,color:#1e3a5f;
+    classDef nodeStorage fill:#f0fdf4,stroke:#16a34a,stroke-width:2px,color:#14532d;
 
-    class INGEST,QUEUE,MGR,CONN blueprint;
-    class T1,T2 storageNode;
+    class INGEST nodeIngest;
+    class QUEUE,EVAL nodeBuffer;
+    class MGR,CONN nodePool;
+    class T1,T2 nodeStorage;
 ```
 
 ```mermaid
@@ -71,45 +75,55 @@ flowchart TB
     "primaryBorderColor": "#64748b",
     "primaryTextColor": "#0f172a",
     "lineColor": "#475569",
-    "actorBkg": "#f8fafc",
-    "actorBorder": "#475569",
-    "actorTextColor": "#0f172a",
-    "signalColor": "#334155",
-    "signalTextColor": "#0f172a"
-  }
+    "clusterBkg": "#f8fafc",
+    "clusterBorder": "#94a3b8"
+  },
+  "flowchart": { "curve": "basis", "htmlLabels": true, "nodeSpacing": 25, "rankSpacing": 40 }
 } }%%
-sequenceDiagram
-    autonumber
-    participant Ingest as Pipeline Ingest
-    participant Buffer as Batch Ring Buffer (buffer.py)
-    participant Pool as asyncpg.Pool
-    participant Conn as Leased DB Connection
-    participant PG as PostgreSQL 14+
-
-    loop Continuous Ingestion
-        Ingest->>Buffer: append(telemetry_tuple)
-        Note over Buffer: Queue size increments (e.g. 1..49)
+flowchart TB
+    subgraph QUEUE_STAGE["In-Memory Multi-Row Accumulation"]
+        direction TB
+        Q1["<b>Append Normalized Tuple</b><br/>Non-blocking append into in-memory ring list"]
+        Q2["<b>Thread-Safe Queue Counter</b><br/>Evaluate size continuously (1..50)"]
+        Q1 --> Q2
     end
 
-    alt Trigger Condition 1: Size Reaches 50 Records
-        Note over Buffer: len(queue) >= 50
-    else Trigger Condition 2: Timer Reaches 300 ms
-        Note over Buffer: (now - last_flush) >= 0.3s
+    subgraph TRIGGER_STAGE["Batch Flush Evaluation Domain"]
+        direction TB
+        T1["<b>Record Threshold Breach</b><br/>len(queue) &gt;= 50 records"]
+        T2["<b>Interval Elapsed Breach</b><br/>(now - last_flush) &gt;= 300 ms"]
     end
 
-    Buffer->>Buffer: Atomically slice batch & reset timer
-    Buffer->>Pool: pool.acquire()
-    Pool-->>Conn: Yield active connection
-    
-    rect rgb(248, 250, 252)
-        Note over Conn,PG: Transaction Boundary
-        Conn->>PG: BEGIN
-        Conn->>PG: conn.executemany("INSERT INTO telemetry ...", batch_slice)
-        Conn->>PG: COMMIT
+    QUEUE_STAGE --> TRIGGER_STAGE
+
+    subgraph TRANSACTION_STAGE["asyncpg Connection Lease &amp; Multi-Row Insert"]
+        direction TB
+        X1["<b>Atomic Batch Slicing</b><br/>Slice records from queue &amp; reset timer"]
+        X2["<b>Lease Connection from Pool</b><br/><code>async with pool.acquire() as conn:</code>"]
+        X3["<b>Atomic Multi-Row Transaction</b><br/><code>await conn.executemany(INSERT_SQL, batch)</code>"]
+        X1 --> X2 --> X3
     end
 
-    Conn-->>Pool: Release connection back to pool
-    Note over Buffer: In-memory memory stays minimal and constant
+    TRIGGER_STAGE ==>|"Condition met"| TRANSACTION_STAGE
+
+    subgraph STORAGE_STATUS["PostgreSQL 14+ Persistence Status"]
+        direction TB
+        S1["<b>Committed to Time-Series Store</b><br/>B-Tree indexed on timestamp &amp; pole_id"]
+        S2["<b>Release Connection to Pool</b><br/>Ready for next query without connection leaks"]
+        S1 --> S2
+    end
+
+    TRANSACTION_STAGE ==>|"Transaction commit"| STORAGE_STATUS
+
+    classDef default fill:#ffffff,stroke:#64748b,stroke-width:1px,color:#0f172a;
+    classDef healthy fill:#f0fdf4,stroke:#16a34a,stroke-width:1.5px,color:#166534;
+    classDef active fill:#eff6ff,stroke:#2563eb,stroke-width:1.5px,color:#1e3a5f;
+    classDef warning fill:#fef3c7,stroke:#d97706,stroke-width:1.5px,color:#92400e;
+
+    class Q1,Q2 active;
+    class T1,T2 warning;
+    class X1,X2,X3 active;
+    class S1,S2 healthy;
 ```
 
 ---

@@ -81,11 +81,19 @@ flowchart TB
     WS ==>|"WebSocket /ws/telemetry"| SWIN
 
     classDef default fill:#ffffff,stroke:#64748b,stroke-width:1px,color:#0f172a;
-    classDef blueprint fill:#f8fafc,stroke:#475569,stroke-width:1.5px,color:#0f172a;
-    classDef storageNode fill:#f1f5f9,stroke:#334155,stroke-width:2px,color:#0f172a;
+    classDef nodeSafe fill:#f0fdf4,stroke:#16a34a,stroke-width:1.5px,color:#14532d;
+    classDef nodeIngest fill:#f8fafc,stroke:#475569,stroke-width:1.5px,color:#0f172a;
+    classDef nodeAnalytics fill:#ede9fe,stroke:#7c3aed,stroke-width:1.5px,color:#4c1d95;
+    classDef nodeHazard fill:#fef2f2,stroke:#ef4444,stroke-width:1.5px,color:#991b1b;
+    classDef nodeClient fill:#eff6ff,stroke:#2563eb,stroke-width:1.5px,color:#1e3a5f;
+    classDef nodeStorage fill:#f1f5f9,stroke:#334155,stroke-width:2px,color:#0f172a;
 
-    class P1,P2,P3,SER,MQ,NORM,KAL,ANOM,FUS,WS,AI,SWIN,RAF,UI blueprint;
-    class BUF,PG storageNode;
+    class P1,P2,P3 nodeSafe;
+    class SER,MQ,NORM nodeIngest;
+    class KAL,ANOM nodeAnalytics;
+    class FUS nodeHazard;
+    class BUF,PG nodeStorage;
+    class WS,AI,SWIN,RAF,UI nodeClient;
 ```
 
 ---

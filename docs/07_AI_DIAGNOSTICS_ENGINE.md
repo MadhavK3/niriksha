@@ -56,9 +56,17 @@ flowchart LR
     R1 -.->|"Deterministic Safety Fallback"| RESP
 
     classDef default fill:#ffffff,stroke:#64748b,stroke-width:1px,color:#0f172a;
-    classDef blueprint fill:#f8fafc,stroke:#475569,stroke-width:1.5px,color:#0f172a;
+    classDef nodeQuery fill:#f8fafc,stroke:#475569,stroke-width:1.5px,color:#0f172a;
+    classDef nodeHeuristic fill:#f0fdf4,stroke:#16a34a,stroke-width:1.5px,color:#14532d;
+    classDef nodePrompt fill:#ede9fe,stroke:#7c3aed,stroke-width:1.5px,color:#4c1d95;
+    classDef nodeOllama fill:#eff6ff,stroke:#2563eb,stroke-width:2px,color:#1e3a5f;
+    classDef nodeReport fill:#f8fafc,stroke:#334155,stroke-width:1.5px,color:#0f172a;
 
-    class REQ,R1,INJ,OLL,RESP blueprint;
+    class REQ nodeQuery;
+    class R1 nodeHeuristic;
+    class INJ nodePrompt;
+    class OLL nodeOllama;
+    class RESP nodeReport;
 ```
 
 ```mermaid
@@ -71,42 +79,66 @@ flowchart LR
     "primaryBorderColor": "#64748b",
     "primaryTextColor": "#0f172a",
     "lineColor": "#475569",
-    "actorBkg": "#f8fafc",
-    "actorBorder": "#475569",
-    "actorTextColor": "#0f172a",
-    "signalColor": "#334155",
-    "signalTextColor": "#0f172a"
-  }
+    "clusterBkg": "#f8fafc",
+    "clusterBorder": "#94a3b8"
+  },
+  "flowchart": { "curve": "basis", "htmlLabels": true, "nodeSpacing": 25, "rankSpacing": 40 }
 } }%%
-sequenceDiagram
-    autonumber
-    actor Op as Municipal Operator
-    participant UI as React AI Drawer
-    participant Router as /api/ai Router
-    participant Diag as Rule Heuristics (Tier 1)
-    participant Ollama as Local Ollama LLM (Tier 2)
-
-    Op->>UI: Submit inquiry ("Assess electrocution hazard near Pole 1")
-    UI->>Router: POST /api/ai/chat { message, sessionId }
-    
-    Router->>Diag: evaluate_active_hazards()
-    Diag-->>Router: Deterministic safety matrix (Voltage: 42V, Depth: 18cm)
-    
-    Note over Router: Build prompt: system prompt + live telemetry JSON + matrix
-    
-    Router->>Ollama: POST http://localhost:11434/api/generate (stream=true)
-    
-    alt Ollama Active & Generates Tokens
-        loop Stream Token Chunks
-            Ollama-->>Router: Token stream chunk
-            Router-->>UI: Server-Sent Events / Chunked read
-            UI-->>Op: Progressive Markdown rendering
-        end
-    else Ollama Daemon Offline or Timeout > 5.0s
-        Router->>Router: Trip Circuit Breaker
-        Router-->>UI: Return Deterministic Rule Matrix directly
-        UI-->>Op: Display Safety Checklist & Root-Cause Actions
+flowchart TB
+    subgraph QUERY_INTENT["Operator Interaction Domain"]
+        direction TB
+        Q1["<b>Operator Diagnostic Inquiry</b><br/>Submit question via AI Chat Drawer"]
+        Q2["<b>REST API Gateway</b><br/><code>POST /api/ai/chat</code> with session context"]
+        Q1 --> Q2
     end
+
+    subgraph HEURISTIC_EVAL["Deterministic Safety Evaluation (Tier 1)"]
+        direction TB
+        E1["<b>Invoke diagnostics.py</b><br/>Evaluate active voltage, flood, and gas state"]
+        E2["<b>Safety Matrix Synthesis</b><br/>Assemble zero-latency root-cause checklist"]
+        E1 --> E2
+    end
+
+    QUERY_INTENT --> HEURISTIC_EVAL
+
+    subgraph PROMPT_ASSEMBLY["Dynamic Grounding &amp; Context Assembly"]
+        direction TB
+        P1["<b>Load System Prompt Template</b><br/><code>ollama_system_prompt.md</code>"]
+        P2["<b>Slot Real-Time Telemetry</b><br/>Inject latest JSON snapshot of all 3 poles"]
+        P1 --> P2
+    end
+
+    HEURISTIC_EVAL --> PROMPT_ASSEMBLY
+
+    subgraph INFERENCE_CIRCUIT["Ollama LLM Inference &amp; Circuit Breaker (Tier 2)"]
+        direction TB
+        C1{"<b>Ollama Daemon Status</b><br/>Local port 11434 responding &lt; 5s?"}
+        C2["<b>Streaming Token Generation</b><br/>Local Qwen 2.5 / Llama 3.2 natural language response"]
+        C3["<b>Trip Circuit Breaker</b><br/>Deliver Tier 1 deterministic safety table directly"]
+        C1 -->|"Healthy"| C2
+        C1 -.->|"Offline / Timeout"| C3
+    end
+
+    PROMPT_ASSEMBLY ==> INFERENCE_CIRCUIT
+
+    subgraph CLIENT_RENDER["Drawer Markdown Output"]
+        direction TB
+        O1["<b>Progressive Markdown Stream</b><br/>Render actionable guidance &amp; mitigation steps"]
+    end
+
+    C2 --> O1
+    C3 --> O1
+
+    classDef default fill:#ffffff,stroke:#64748b,stroke-width:1px,color:#0f172a;
+    classDef healthy fill:#f0fdf4,stroke:#16a34a,stroke-width:1.5px,color:#166534;
+    classDef active fill:#eff6ff,stroke:#2563eb,stroke-width:1.5px,color:#1e3a5f;
+    classDef warning fill:#fef3c7,stroke:#d97706,stroke-width:1.5px,color:#92400e;
+    classDef fallback fill:#fef2f2,stroke:#ef4444,stroke-width:1.5px,color:#991b1b;
+
+    class Q1,Q2,P1,P2 active;
+    class E1,E2,O1 healthy;
+    class C1,C2 active;
+    class C3 fallback;
 ```
 
 ---

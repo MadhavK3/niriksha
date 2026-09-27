@@ -58,9 +58,15 @@ flowchart TB
     HOOK_LAYER -.->|"Live hazard events"| ALR
 
     classDef default fill:#ffffff,stroke:#64748b,stroke-width:1px,color:#0f172a;
-    classDef blueprint fill:#f8fafc,stroke:#475569,stroke-width:1.5px,color:#0f172a;
+    classDef nodeShell fill:#f8fafc,stroke:#475569,stroke-width:1.5px,color:#0f172a;
+    classDef nodeHook fill:#eff6ff,stroke:#2563eb,stroke-width:1.5px,color:#1e3a5f;
+    classDef nodeView fill:#f0fdf4,stroke:#16a34a,stroke-width:1.5px,color:#14532d;
+    classDef nodeAlert fill:#fef2f2,stroke:#ef4444,stroke-width:1.5px,color:#991b1b;
 
-    class APP,HDR,SBR,H1,H2,H3,DASH,MAP,ALR,REP,FLT,SET blueprint;
+    class APP,HDR,SBR nodeShell;
+    class H1,H2,H3 nodeHook;
+    class DASH,MAP,REP,FLT,SET nodeView;
+    class ALR nodeAlert;
 ```
 
 ```
