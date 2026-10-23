@@ -198,8 +198,8 @@ Follow these steps to set up and run the entire platform locally on Windows or L
 ### Step 1: Clone Repository
 
 ```bash
-git clone https://github.com/your-username/SIH.git
-cd SIH
+git clone https://github.com/your-username/niriksha.git
+cd niriksha
 ```
 
 ---
@@ -344,7 +344,7 @@ Test coverage includes:
 ## 📂 Project Structure
 
 ```
-SIH/
+niriksha/
 ├── backend/                       # Python FastAPI backend service
 │   ├── app/
 │   │   ├── ai/                    # Offline AI heuristics & Ollama client
@@ -398,14 +398,14 @@ SIH/
 
 For deep technical details, circuit schematics, mathematical equations, and operational procedures, refer to the documentation chapters:
 
-- **[System Architecture](file:///d:/proj/SIH/docs/01_SYSTEM_ARCHITECTURE.md)**: End-to-end topology, fault boundaries, and concurrency model.
-- **[Hardware & Radio Mesh](file:///d:/proj/SIH/docs/02_HARDWARE_AND_MESH.md)**: ESP32 pin assignments, painlessMesh protocol, transmission cadence, and sensor calibration.
-- **[Ingestion & Protocols](file:///d:/proj/SIH/docs/03_INGESTION_AND_PROTOCOLS.md)**: Serial UART worker, MQTT subscriber, packet normalizer, and error recovery.
-- **[Analytics & Algorithms](file:///d:/proj/SIH/docs/04_ANALYTICS_AND_ALGORITHMS.md)**: 1D Kalman filter formulas, streaming EWMA/CUSUM anomaly detection, and composite risk scoring.
-- **[Database & Storage](file:///d:/proj/SIH/docs/05_DATABASE_AND_STORAGE.md)**: PostgreSQL table schemas, indexes, asyncpg pooling, and memory batch buffering.
-- **[Frontend Architecture](file:///d:/proj/SIH/docs/06_FRONTEND_AND_DASHBOARD.md)**: React 19 dashboard, sliding-window buffer, and procedural Web Audio sirens.
-- **[Offline AI Diagnostics](file:///d:/proj/SIH/docs/07_AI_DIAGNOSTICS_ENGINE.md)**: Deterministic heuristic safety matrix and local Ollama model integration.
-- **[Operations & Runbook](file:///d:/proj/SIH/docs/08_OPERATIONS_AND_RUNBOOK.md)**: Management CLI commands, environment options, port allocations, and troubleshooting.
-- **[Modular Components](file:///d:/proj/SIH/docs/09_MODULAR_COMPONENTS.md)**: Frontend subcomponents, backend packages, and single-responsibility layout.
-- **[Full Documentation Hub](file:///d:/proj/SIH/docs/README.md)**: Master documentation index.
+- **[System Architecture](file:///d:/proj/niriksha/docs/01_SYSTEM_ARCHITECTURE.md)**: End-to-end topology, fault boundaries, and concurrency model.
+- **[Hardware & Radio Mesh](file:///d:/proj/niriksha/docs/02_HARDWARE_AND_MESH.md)**: ESP32 pin assignments, painlessMesh protocol, transmission cadence, and sensor calibration.
+- **[Ingestion & Protocols](file:///d:/proj/niriksha/docs/03_INGESTION_AND_PROTOCOLS.md)**: Serial UART worker, MQTT subscriber, packet normalizer, and error recovery.
+- **[Analytics & Algorithms](file:///d:/proj/niriksha/docs/04_ANALYTICS_AND_ALGORITHMS.md)**: 1D Kalman filter formulas, streaming EWMA/CUSUM anomaly detection, and composite risk scoring.
+- **[Database & Storage](file:///d:/proj/niriksha/docs/05_DATABASE_AND_STORAGE.md)**: PostgreSQL table schemas, indexes, asyncpg pooling, and memory batch buffering.
+- **[Frontend Architecture](file:///d:/proj/niriksha/docs/06_FRONTEND_AND_DASHBOARD.md)**: React 19 dashboard, sliding-window buffer, and procedural Web Audio sirens.
+- **[Offline AI Diagnostics](file:///d:/proj/niriksha/docs/07_AI_DIAGNOSTICS_ENGINE.md)**: Deterministic heuristic safety matrix and local Ollama model integration.
+- **[Operations & Runbook](file:///d:/proj/niriksha/docs/08_OPERATIONS_AND_RUNBOOK.md)**: Management CLI commands, environment options, port allocations, and troubleshooting.
+- **[Modular Components](file:///d:/proj/niriksha/docs/09_MODULAR_COMPONENTS.md)**: Frontend subcomponents, backend packages, and single-responsibility layout.
+- **[Full Documentation Hub](file:///d:/proj/niriksha/docs/README.md)**: Master documentation index.
 - **[NIRIKSHA API Documentation](https://om29dev.github.io/niriksha/docs/)**: Interactive OpenAPI / Swagger documentation hosted on GitHub Pages.
